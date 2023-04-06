@@ -80,10 +80,10 @@ outcome_dim = Y.shape[1]
 hidden_dim = 2048
 latent_dim = 128
 epochs = [10,10,10]
-lr = [0.0001,0.00001,0.00001]
-dropout_prob = [.0,.1,.2]
-l2 = [0,0.00001,0.0001]
-workers = 2
+lr = [0.0001,0.00001]
+dropout_prob = [.0,.2]
+l2 = [0,0.00001]
+workers = 4
 
 #Pretraining
 
