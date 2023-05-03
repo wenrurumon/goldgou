@@ -242,17 +242,18 @@ datasets = []
 hidden_dim = 2048
 latent_dim = 256
 dropout_rates = [0.7,0.6,0.5,0.4]
-l2_regs = [0.01,0.01,0.01,0.01]
+l2_regs = [0.0001,0.0002,0.0003,0.0004]
 num_epochses = [10000,10000,10000,10000]
-lrs = [0.0001,0.0002,0.0003,0.0004]
+lrs = [0.01,0.01,0.01,0.01]
 early_tols = [1.1,1.1,1.1,1.05]
 patiences = [10,10,10,10]
 patience2s = [10,10,10,10]
 w = [1,2,3,4,5]
 w = w/np.sum(w)
+num_seeds = 10
 num_robots = 100
 num_votes = int(len(codes)*0.05)
-printlog([hidden_dim,latent_dim,dropout_rates,l2_regs,num_epochses,lrs,early_tols,patiences,patience2s,w,num_robots,num_votes])
+printlog([hidden_dim,latent_dim,dropout_rates,l2_regs,num_epochses,lrs,early_tols,patiences,patience2s,w,num_seeds,num_robots,num_votes])
 
 ##########################################################################################
 # Modeling
@@ -263,7 +264,7 @@ Y_dim = Y.shape[1]
 Z_dim = Z.shape[1]
 models = []
 
-for s in range(10):
+for s in range(num_seeds):
     np.random.seed(s)
     samples = np.random.permutation(np.ravel(range(X.shape[0])))
     samples = np.ravel((samples%4).tolist())
@@ -440,7 +441,7 @@ back = (lowpvt/openpvt)[-5:,:]
 #Model Merging
 
 models = []
-for s in range(10):
+for s in range(num_seeds):
     model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
     model.load_state_dict(torch.load(f'model/model2_{arg1}_{prd1}_{note}_{s}.pt'))
     models.append(model)
@@ -482,7 +483,7 @@ rlt['method'] = 'model1'
 rlt0 = rlt
 
 rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],0.8)]
-rlt[:, 'share'] = rlt['count'] / rlt['count'].sum()
+rlt['share'] = rlt['count'] / rlt['count'].sum()
 printlog(rlt)
 
 ##########################################################################################
@@ -587,7 +588,7 @@ rlt['method'] = 'model2'
 rlt1 = rlt
 
 rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],0.8)]
-rlt[:, 'share'] = rlt['count'] / rlt['count'].sum()
+rlt['share'] = rlt['count'] / rlt['count'].sum()
 printlog(rlt)
 
 pd.concat([rlt0,rlt1],axis=0,ignore_index=True).to_csv(f'rlt/model2_{arg1}_{prd1}_{note}.csv')
