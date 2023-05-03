@@ -21,13 +21,13 @@ import math
 #Setup
 ##########################################################################################
 
-# arg1 = int(sys.argv[1])
-# prd1 = int(sys.argv[2])
-# note = datetime.datetime.now().strftime("%y%m%d%H%M")
+arg1 = int(sys.argv[1])
+prd1 = int(sys.argv[2])
+note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
-arg1 = '20230410'
-prd1 = 30
-note = 'test'
+# arg1 = '20230410'
+# prd1 = 30
+# note = 'test'
 
 if(note=='test'):
   def printlog(x):
@@ -231,9 +231,28 @@ class Autoencoder(nn.Module):
 
 models = []
 datasets = []
-np.random.seed(777)
-samples = np.random.permutation(np.ravel(range(X.shape[0])))
-samples = np.ravel((samples%5).tolist())
+# np.random.seed(777)
+# samples = np.random.permutation(np.ravel(range(X.shape[0])))
+# samples = np.ravel((samples%5).tolist())
+
+##########################################################################################
+# Parametering
+##########################################################################################
+
+hidden_dim = 2048
+latent_dim = 256
+dropout_rates = [0.7,0.6,0.5,0.4]
+l2_regs = [0.01,0.01,0.01,0.01]
+num_epochses = [10000,10000,10000,10000]
+lrs = [0.0001,0.0002,0.0003,0.0004]
+early_tols = [1.1,1.1,1.1,1.05]
+patiences = [10,10,10,10]
+patience2s = [10,10,10,10]
+w = [1,2,3,4,5]
+w = w/np.sum(w)
+num_robots = 100
+num_votes = int(len(codes)*0.05)
+printlog([hidden_dim,latent_dim,dropout_rates,l2_regs,num_epochses,lrs,early_tols,patiences,patience2s,w,num_robots,num_votes])
 
 ##########################################################################################
 # Modeling
@@ -242,19 +261,14 @@ samples = np.ravel((samples%5).tolist())
 X_dim = X.shape[1]
 Y_dim = Y.shape[1]
 Z_dim = Z.shape[1]
-hidden_dim = 2048
-latent_dim = 256
-dropout_rates = [0.7,0.5,0.3,0.5]
-l2_regs = [0,0,0,0]
-num_epochses = [10000,10000,10000,10000]
-lrs = [0.01,0.01,0.01,0.01]
-early_tols = [1.1,1.1,1.1,1.1]
-patiences = [10,10,10,10]
-patience2s = [10,10,10,10]
 models = []
 
-for s in range(5):
-    X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+for s in range(10):
+    np.random.seed(s)
+    samples = np.random.permutation(np.ravel(range(X.shape[0])))
+    samples = np.ravel((samples%4).tolist())
+    X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=3,:],Y[samples!=3,:],Z[samples!=3,:],X[samples==3,:],Y[samples==3,:],Z[samples==3,:]
+    # X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
     train_dataset = TensorDataset(X_train, Y_train, Z_train)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     criterion = nn.MSELoss()
@@ -422,18 +436,19 @@ for s in range(5):
 
 profit = (closepvt/openpvt)[-5:,:]
 back = (lowpvt/openpvt)[-5:,:]
-w = [1,2,3,4,5]
-w = w/np.sum(w)
-scores = []
-votes = []
-num_robots = 200
-num_votes = 10
+
+#Model Merging
 
 models = []
-for s in range(5):
+for s in range(10):
     model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
     model.load_state_dict(torch.load(f'model/model2_{arg1}_{prd1}_{note}_{s}.pt'))
     models.append(model)
+
+#Voting
+
+scores = []
+votes = []
 
 for modeli in models:
     for s in range(num_robots):    
@@ -462,6 +477,118 @@ votes = np.asarray(votes)
 rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes[robotid,:][:,range(num_votes)])), orient='index', columns=['count']).sort_values('count',ascending=False)
 rlt['codes'] = codes[rlt.index]
 rlt['idx'] = rlt['count']/(len(models)*num_robots)/(num_votes/len(codes))
-rlt = rlt[rlt['idx']>0.5]
-rlt['share'] = rlt['count']/np.sum(rlt['count'])
+rlt['date'] = arg1
+rlt['method'] = 'model1'
+rlt0 = rlt
+
+rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],0.8)]
+rlt[:, 'share'] = rlt['count'] / rlt['count'].sum()
+printlog(rlt)
+
+##########################################################################################
+# Models Update
+##########################################################################################
+
+#New Training
+
+models2 = []
+s = -1
+for model in models:
+    s += 1
+    m = 3
+    dropout_rate = dropout_rates[m]
+    l2_reg = l2_regs[m]
+    num_epochs = num_epochses[m]
+    lr = lrs[m]
+    early_tol = early_tols[m]
+    patience = patiences[m]
+    patience2 = patience2s[m]
+    counter2 = 0
+    best_loss = np.inf
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.3)
+    train_dataset = TensorDataset(X[-200:,:], Y[-200:,:], Z[-200:,:])
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    for epoch in range(num_epochs):
+        for xtr, ytr, ztr in train_loader:
+            xtr = xtr.float()
+            ytr = ytr.float()
+            yhat, zhat, l2_loss = model(xtr)
+            loss0 = criterion(ztr, zhat)
+            loss1 = criterion(ytr, yhat)
+            loss = .5*loss0 + .5*loss1 + l2_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        with torch.no_grad():
+            yhate, zhate, l2_losse = model(X[-40:,:])
+            vloss0 = criterion(Z[-40:,:], zhate)
+            vloss1 = criterion(Y[-40:,:], yhate)
+            vloss = .5*vloss0 + .5*vloss1 + l2_losse
+        if epoch>200:
+            if vloss < best_loss*early_tol:
+                if vloss < best_loss:
+                    best_loss = vloss
+                    best_model_state_dict = model.state_dict()
+                    counter = 0
+                else:
+                    counter += 1
+            else:
+                counter += 1
+            if counter >= patience:
+                printlog(f'Model 3 @ {s}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{loss0:.4f}|{loss1:.4f}], Validate:[{vloss:.4f}|{vloss0:.4f}|{vloss1:.4f}]')
+                counter = 0
+                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
+                model.load_state_dict(best_model_state_dict)
+                counter2 += 1
+            if counter2 > patience2:
+                printlog(f"Model 3 @ {s} Early stopping at epoch {epoch+1}")
+                break      
+        # if (epoch+1)%1000 == 0:
+            # printlog(f'Model 3 @ {s}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{loss0:.4f}|{loss1:.4f}], Validate:[{vloss:.4f}|{vloss0:.4f}|{vloss1:.4f}]')
+    printlog(f"{arg1}_{prd1}_{note}_{s} finetuned")
+    models2.append(model)
+
+models = models2
+
+#Voting
+
+scores = []
+votes = []
+
+for modeli in models:
+    for s in range(num_robots):    
+        torch.manual_seed(s)
+        Y2, Z2, _ = modeli(X2)
+        Y2 = -Yscaler.inverse_transform(Y2.cpu().detach().numpy())
+        Y1 = Y2[:,range(len(codes))].argsort(axis=1)
+        # Y2 = Y2[:,len(codes):].argsort(axis=1)
+        profiti = []
+        backi = []
+        for i in range(5):
+            profiti.append(profit[i,Y1[i,range(num_votes)]]*w[i])
+            backi.append(back[i,Y1[i,range(num_votes)]]*w[i])
+        scores.append([np.sum(np.ravel(profiti))/num_votes,np.sum(np.ravel(backi))/num_votes])
+        votes.append(Y1[5,:])
+
+scores = pd.DataFrame(np.asarray(scores))
+scores.columns = ['profit','back']
+scores = scores.sort_values('profit',ascending=False)
+scores['rank'] = np.ravel(range(scores.shape[0]))
+scores['idx'] = (scores['profit']-1)/(1-scores['back'])
+scores = scores.sort_values('idx',ascending=False)
+robotid = scores[(scores['idx']>np.quantile(scores['idx'],0.9))&(scores['profit']>np.quantile(scores['profit'],0.9))].index.tolist()
+
+votes = np.asarray(votes)
+rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes[robotid,:][:,range(num_votes)])), orient='index', columns=['count']).sort_values('count',ascending=False)
+rlt['codes'] = codes[rlt.index]
+rlt['idx'] = rlt['count']/(len(models)*num_robots)/(num_votes/len(codes))
+rlt['date'] = arg1
+rlt['method'] = 'model2'
+rlt1 = rlt
+
+rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],0.8)]
+rlt[:, 'share'] = rlt['count'] / rlt['count'].sum()
+printlog(rlt)
+
+pd.concat([rlt0,rlt1],axis=0,ignore_index=True).to_csv(f'rlt/model2_{arg1}_{prd1}_{note}.csv')
 
