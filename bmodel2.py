@@ -14,6 +14,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 import logging
 import datetime
+from collections import Counter
+import math
 
 ##########################################################################################
 #Setup
@@ -242,7 +244,7 @@ Y_dim = Y.shape[1]
 Z_dim = Z.shape[1]
 hidden_dim = 2048
 latent_dim = 256
-dropout_rates = [0.7,0.6,0.5,0.5]
+dropout_rates = [0.7,0.5,0.3,0.5]
 l2_regs = [0,0,0,0]
 num_epochses = [10000,10000,10000,10000]
 lrs = [0.01,0.01,0.01,0.01]
@@ -414,65 +416,18 @@ for s in range(5):
     models.append(best_model_state_dict)
     torch.save(best_model_state_dict, f'model/model2_{arg1}_{prd1}_{note}_{s}.pt')
 
-    #Model 3
-    m = 3
-    dropout_rate = dropout_rates[m]
-    l2_reg = l2_regs[m]
-    num_epochs = num_epochses[m]
-    lr = lrs[m]
-    early_tol = early_tols[m]
-    patience = patiences[m]
-    patience2 = patience2s[m]
-    counter2 = 0
-    best_loss = np.inf
-    model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-    model.load_state_dict(coef)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.5)
-
-    train_dataset = TensorDataset(X[-200:,:], Y[-200:,:], Z[-200:,:])
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-
-    for epoch in range(num_epochs):
-        for xtr, ytr, ztr in train_loader:
-            xtr = xtr.float()
-            ytr = ytr.float()
-            yhat, zhat, l2_loss = model(xtr)
-            loss0 = criterion(ztr, zhat)
-            loss1 = criterion(ytr, yhat)
-            loss = .5*loss0 + .5*loss1 + l2_loss
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        with torch.no_grad():
-            yhate, zhate, l2_losse = model(X[-40:,:])
-            vloss0 = criterion(Z[-40:,:], zhate)
-            vloss1 = criterion(Y[-40:,:], yhate)
-            vloss = .5*vloss0 + .5*vloss1 + l2_losse
-        if epoch>1000:
-            if vloss < best_loss*early_tol:
-                if vloss < best_loss:
-                    best_loss = vloss
-                    best_model_state_dict = model.state_dict()
-                    counter = 0
-                else:
-                    counter += 0.1
-            else:
-                counter += 1
-            if counter >= patience:
-                printlog(f'Model 3 @ {s}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{loss0:.4f}|{loss1:.4f}], Validate:[{vloss:.4f}|{vloss0:.4f}|{vloss1:.4f}]')
-                counter = 0
-                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
-                model.load_state_dict(best_model_state_dict)
-                counter2 += 1
-            if counter2 > patience2:
-                printlog(f"Model 3 @ {s} Early stopping at epoch {epoch+1}")
-                break      
-        if (epoch+1)%1000 == 0:
-            printlog(f'Model 3 @ {s}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{loss0:.4f}|{loss1:.4f}], Validate:[{vloss:.4f}|{vloss0:.4f}|{vloss1:.4f}]')
-
 ##########################################################################################
-# Modeling - 2nd Stage
+# Voting
 ##########################################################################################
+
+profit = (closepvt/openpvt)[-5:,:]
+back = (lowpvt/openpvt)[-5:,:]
+w = [1,2,3,4,5]
+w = w/np.sum(w)
+scores = []
+votes = []
+num_robots = 200
+num_votes = 10
 
 models = []
 for s in range(5):
@@ -480,12 +435,33 @@ for s in range(5):
     model.load_state_dict(torch.load(f'model/model2_{arg1}_{prd1}_{note}_{s}.pt'))
     models.append(model)
 
-for s in range(100):    
+for modeli in models:
+    for s in range(num_robots):    
+        torch.manual_seed(s)
+        Y2, Z2, _ = modeli(X2)
+        Y2 = -Yscaler.inverse_transform(Y2.cpu().detach().numpy())
+        Y1 = Y2[:,range(len(codes))].argsort(axis=1)
+        # Y2 = Y2[:,len(codes):].argsort(axis=1)
+        profiti = []
+        backi = []
+        for i in range(5):
+            profiti.append(profit[i,Y1[i,range(num_votes)]]*w[i])
+            backi.append(back[i,Y1[i,range(num_votes)]]*w[i])
+        scores.append([np.sum(np.ravel(profiti))/num_votes,np.sum(np.ravel(backi))/num_votes])
+        votes.append(Y1[5,:])
 
-torch.manual_seed(s)
-Y2, Z2, _ = modeli(X2)
-Y2 = -Yscaler.inverse_transform(Y2.cpu().detach().numpy())
-Y1 = Y2[:,range(len(codes))].argsort(axis=1)
-Y2 = Y2[:,len(codes):].argsort(axis=1)
+scores = pd.DataFrame(np.asarray(scores))
+scores.columns = ['profit','back']
+scores = scores.sort_values('profit',ascending=False)
+scores['rank'] = np.ravel(range(scores.shape[0]))
+scores['idx'] = (scores['profit']-1)/(1-scores['back'])
+scores = scores.sort_values('idx',ascending=False)
+robotid = scores[(scores['idx']>np.quantile(scores['idx'],0.9))&(scores['profit']>np.quantile(scores['profit'],0.9))].index.tolist()
 
+votes = np.asarray(votes)
+rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes[robotid,:][:,range(num_votes)])), orient='index', columns=['count']).sort_values('count',ascending=False)
+rlt['codes'] = codes[rlt.index]
+rlt['idx'] = rlt['count']/(len(models)*num_robots)/(num_votes/len(codes))
+rlt = rlt[rlt['idx']>0.5]
+rlt['share'] = rlt['count']/np.sum(rlt['count'])
 
