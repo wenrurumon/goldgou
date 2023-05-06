@@ -228,6 +228,7 @@ class Autoencoder(nn.Module):
 # Modeling
 ############################################################################################################
 
+models0 = []
 models = []
 
 for modeli in range(len(datasets)):
@@ -240,7 +241,7 @@ for modeli in range(len(datasets)):
     lr = 0.01
     early_tol = 1.1
     patience = 10
-    patience2 = 10
+    patience2 = 5
     train_dataset = TensorDataset(X_train, Y_train, Z_train)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     criterion = nn.MSELoss()
@@ -257,10 +258,11 @@ for modeli in range(len(datasets)):
             yhat, zhat, l2_loss = model(xtr)
             lossz = criterion(ztr, zhat)
             lossy = criterion(ytr, yhat)
-            wz = 2*lossz / (2*lossz+lossy)
+            wz = .5*lossz / (.5*lossz+lossy)
             wy = 1-wz
             loss = wy*lossy + wz*lossz + l2_loss
-            optimizer.zero_grad            loss.backward()dfsgdfgsdfgdfsgdfgsdfg
+            optimizer.zero_grad()
+            loss.backward()
             optimizer.step()
         with torch.no_grad():
             yhate, zhate, l2_losse = model(X_test)
@@ -292,14 +294,77 @@ for modeli in range(len(datasets)):
                     vlossy = criterion(Y_test, yhate)
                     vloss = wy*vlossy + wz*vlossz + l2_losse
                 printlog(f"Model {modeli}.{m} training stop at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
-                models.append(model)
+                models0.append(model)
                 break      
-        # if (epoch+1)%1000 == 0:
-        #     printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+    # Model 1
+    X_train,Y_train,Z_train,X_test,Y_test,Z_test = X[-200:,:],Y[-200:,:],Z[-200:,:],X[-100:,:],Y[-100:,:],Z[-100:,:]
+    # X_train,Y_train,Z_train,X_test,Y_test,Z_test = datasets[modeli]
+    m = 1
+    num_epochs = 10000
+    early_tol = 1.1
+    patience = 10
+    patience2 = 10
+    train_dataset = TensorDataset(X_train, Y_train, Z_train)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    criterion = nn.MSELoss()
+    counter2 = 0
+    best_loss = np.inf
+    printlog(f"Model {modeli}.{m} training start")
+    for epoch in range(num_epochs):
+        for xtr, ytr, ztr in train_loader:
+            xtr = xtr.float()
+            ytr = ytr.float()
+            yhat, zhat, l2_loss = model(xtr)
+            lossz = criterion(ztr, zhat)
+            lossy = criterion(ytr, yhat)
+            wz = 2*lossz / (2*lossz+lossy)
+            wy = 1-wz
+            loss = wy*lossy + wz*lossz + l2_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        with torch.no_grad():
+            yhate, zhate, l2_losse = model(X_test)
+            vlossz = criterion(Z_test, zhate)
+            vlossy = criterion(Y_test, yhate)
+            vloss = wy*vlossy + wz*vlossz + l2_losse
+        if epoch>0:
+            if vloss < best_loss*early_tol:
+                if vloss < best_loss:
+                    best_loss = vloss
+                    best_model_state_dict = model.state_dict()
+                    counter = 0
+                else:
+                    counter += .1
+            else:
+                counter += 1
+            if counter >= patience:
+                printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+                counter = 0
+                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.2
+                # optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
+                counter2 += 1
+                model.load_state_dict(best_model_state_dict)
+            if counter2 > patience2:
+                model.load_state_dict(best_model_state_dict)
+                with torch.no_grad():
+                    yhate, zhate, l2_losse = model(X_test)
+                    vlossz = criterion(Z_test, zhate)
+                    vlossy = criterion(Y_test, yhate)
+                    vloss = wy*vlossy + wz*vlossz + l2_losse
+                printlog(f"Model {modeli}.{m} training stop at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
+                models.append(model)
+                break    
+
+models0, models1 = models0, models1
 
 ############################################################################################################
 # Voting
 ############################################################################################################
+
+models = models1
+num_robots = 1000
+num_votes = int(len(codes)*0.05)
 
 life = []
 for i in range(10, closepvt.shape[0]):
@@ -317,11 +382,11 @@ life = life[-5:,:]/life[-6:-1]
 
 votes = []
 for modeli in models:
-    for s in range(200):
+    for s in range(int(num_robots/len(models))):
         torch.manual_seed(s)
         Y2, Z2, _ = modeli(X2)
         Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
-        votes.append(((-Z2).argsort(axis=1))[:,range(10)])
+        votes.append(((-Z2).argsort(axis=1))[:,range(num_votes)])
 
 scores = []
 for votei in votes:
@@ -335,9 +400,33 @@ for votei in votes:
 
 scores = pd.DataFrame(np.asarray(scores))
 scores.columns = ['profit','life','back','minback','avgprofit','avglife']
+scores['pl'] = scores['profit'] * scores['back']
+scores['apl'] = scores['avgprofit'] * scores['avglife']
 
 scores = pd.DataFrame((-np.asarray(scores)).argsort(axis=0))
-scores.columns = ['profit','life','back','minback','avgprofit','avglife']
-scores.head(int(scores.shape[0]/10))
+scores.columns = ['profit','life','back','minback','avgprofit','avglife','pl','apl']
+scores = scores.head(int(num_robots/10))
 
-codes[votes[437][5]]
+votes2 = []
+for i in range(scores.shape[0]):
+    votes2.append(codes[votes[scores['apl'][i]][5]])
+
+votes2 = np.ravel(votes2)
+rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
+rlt['codes'] = rlt.index
+rlt['date'] = arg1
+rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
+
+rlt = rlt[rlt['idx']>1]
+rlt['share'] = rlt['count']/sum(rlt['count'])
+
+#Validate
+
+valdata = pd.read_csv(f'data/raw20230508.csv')
+valdata =  valdata.drop_duplicates()
+valdata = valdata[(valdata['code'].isin(rlt['codes'])) & (valdata['date']==max(valdata['date']))]
+valdata = valdata.assign(profit = valdata['close']/valdata['open'])
+valdata = rlt.rename(columns={'codes': 'code', 'share': 'share'}).loc[:, ['code', 'share', 'idx']].merge(valdata,on='code')
+
+valdata
+np.sum(valdata['profit'] * valdata['share'])/sum(valdata['share'])
