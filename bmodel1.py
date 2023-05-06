@@ -1,38 +1,45 @@
 
+import pandas as pd
+import numpy as np
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import pandas as pd
 import os
 from sklearn.preprocessing import StandardScaler
 import datetime
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from scipy.stats import rankdata
-import sys
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 import logging
+import datetime
+from collections import Counter
+import math
 
-# HyperParameter
+##########################################################################################
+#Setup
+##########################################################################################
 
-arg1 = sys.argv[1]
-prd1 = sys.argv[2]
-note = datetime.datetime.now().strftime("%y%m%d%H%M")
-os.system(f'python proc1.py {arg1} {prd1}')
-arg1 = f'model1_{arg1}_{prd1}'
+# arg1 = int(sys.argv[1])
+# prd1 = int(sys.argv[2])
+# note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
-# arg1 = 'model1_20230420_40'
-# note = 'test'
+arg1 = '20230505'
+prd1 = 40
+note = 'test'
 
-logging.basicConfig(
-    level=logging.DEBUG, 
-    format='%(asctime)s %(message)s', 
-    filename=f'log/bmodel1_{arg1}_{note}.log',  
-    filemode='a'  
-)
-printlog = logging.debug
-# printlog = print
+if(note=='test'):
+  def printlog(x):
+    print(datetime.datetime.now(), x)
+else:
+    logging.basicConfig(
+        level=logging.DEBUG, 
+        format='%(asctime)s %(message)s', 
+        filename=f'log/bmodel2_{arg1}_{note}.log',  
+        filemode='a'  
+    )
+    printlog = logging.debug
 
 if torch.cuda.is_available():
     printlog("GPU is available")
@@ -41,67 +48,144 @@ else:
     printlog("GPU is not available, using CPU instead")
     device = torch.device("cpu")
 
-hidden_dim = 512
-latent_dim = 32
-dropout_rates = [0.5, 0.5, 0.5]
-lrs = [0.001, 0.001, 0.001]
-l2_regs = [0.01, 0.01, 0.01]
-num_epochss = [5000,5000,5000]
-early_tols = [1.1,1.1,1.05]
-batch_sizes = [32,32,32]
-patiences = [20,25,30]
-patience2s = [15,20,30]
-# patience2s = [1,2,3]
-prelosss = [[7,2,1],[3,4,3],[1,7,2]]
-sampleset = [777,603]
+printlog(f'load data: data/raw{arg1}.csv')
 
-printlog([arg1,note,hidden_dim,latent_dim,dropout_rates,lrs,l2_regs,num_epochss,early_tols,batch_sizes,patiences,patience2s,prelosss])
+##########################################################################################
+#Process data
+##########################################################################################
 
-# Data Load and Processing
+raw = pd.read_csv(f'data/raw{arg1}.csv')
+raw =  raw.drop_duplicates()
+raw['date'] = pd.to_datetime(raw['date'])
+raw = raw.sort_values(['code','date'])
+raw['did'] = raw['date'].rank(method='dense').astype(int) - 1
 
-raw = np.load(f'data/{arg1}.npz',allow_pickle=True)
-printlog(f'load data: data/{arg1}.npz')
-X = raw['X']
-Y = raw['Y']
-Y2 = raw['Y2']
-Z = raw['Z']
-P = raw['P']
-L = raw['L']
-B = raw['B']
-codes = raw['codes']
-dates = raw['dates']
-# Y = np.where(Y < 1, 1 + (Y - 1) * 2, Y)
+def fill_missing_values(row):
+    return row.fillna(method='ffill')
 
-XZ = np.concatenate((X,Z))
-XZscaler = StandardScaler()
-XZscaler.fit(XZ)
-X = XZscaler.transform(X)
-Z = XZscaler.transform(Z)
-Yscaler = StandardScaler()
-Yscaler.fit(Y)
-Y = Yscaler.transform(Y)
-Y2scaler = StandardScaler()
-Y2scaler.fit(Y2)
-Y2 = Y2scaler.transform(Y2)
+raws = []
+for i in ['open','close','vol','high','low']:
+    rawi = pd.pivot_table(raw, values=i, index=['did'], columns=['code'])
+    rawi = rawi.apply(fill_missing_values,axis=0)
+    rawi = rawi[rawi.index>=np.min(raw['did'][raw['date']>'2021-01-01'])]
+    raws.append(rawi.iloc()[-500:,:])
 
-# Tensoring
+raws = dict(zip(['open','close','vol','high','low'],raws))
+
+codesel = ~np.isnan(np.ravel(raws['close'].iloc()[0,:]))
+codes = np.ravel(raws['close'].columns)[codesel]
+closepvt = np.asarray(raws['close'])[:,codesel]
+openpvt = np.asarray(raws['open'])[:,codesel]
+volpvt = np.asarray(raws['vol'])[:,codesel]
+lowpvt = np.asarray(raws['low'])[:,codesel]
+highpvt = np.asarray(raws['high'])[:,codesel]
+
+# Close Processing
+
+Xclose = []
+for i in range(closepvt.shape[0]-(prd1-1)):
+    xi = closepvt[range(i, i + (prd1-1)), :] / closepvt[i + (prd1-1), None, :]
+    xi = np.nan_to_num(xi,nan=-1)
+    Xclose.append(np.ravel(xi.T))
+
+Xclose = np.asarray(Xclose)
+
+# High Processing
+
+Xhigh = []
+for i in range(highpvt.shape[0]-(prd1-1)):
+    xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    xi = np.nan_to_num(xi,nan=-1)
+    xi = xi[-5:,:]
+    Xhigh.append(np.ravel(xi.T))
+
+Xhigh = np.asarray(Xhigh)
+
+# Low Processing
+
+Xlow = []
+for i in range(lowpvt.shape[0]-(prd1-1)):
+    xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    xi = np.nan_to_num(xi,nan=-1)
+    xi = xi[-5:,:]
+    Xlow.append(np.ravel(xi.T))
+
+Xlow = np.asarray(Xlow)
+
+# Vol Processing
+
+Xvol = []
+for i in range(volpvt.shape[0]-(prd1-1)):
+    xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
+    xi = np.nan_to_num(xi,nan=-1)
+    # xi = xi[-10:,:]
+    Xvol.append(np.ravel(xi.T))
+
+Xvol = np.asarray(Xvol)
+
+# X Processing
+
+X = np.concatenate((Xclose,Xhigh,Xlow,Xvol),axis=1)
+# X = np.concatenate((Xclose,Xvol),axis=1)
+
+# Y Processing
+
+P = []
+B = []
+for i in range(closepvt.shape[0]-prd1-5):
+    profi = openpvt[range(i+prd1+1,i+prd1+6),:].mean(axis=0)/openpvt[i+prd1,None,:]
+    backi = lowpvt[range(i+prd1+1,i+prd1+6),:].min(axis=0)/openpvt[i+prd1,None,:]
+    P.append(profi)
+    B.append(backi)
+
+P = np.concatenate(P,axis=0)
+B = np.concatenate(B,axis=0)
+# Y = np.concatenate((P,B),axis=1)
+Z = P
+
+# Dataseting
+
+Xscaler = StandardScaler()
+Xscaler.fit(X)
+X = Xscaler.transform(X)
+
+Zscaler = StandardScaler()
+Zscaler.fit(Z)
+Z = Zscaler.transform(Z)
+
+Y = X[-Z.shape[0]:,range(Xclose.shape[1])]
+# Y = X[-Z.shape[0]:,:]
+X2 = X[Z.shape[0]:,:]
+X = X[range(Z.shape[0]),:]
 
 X = torch.tensor(X).float().to(device)
 Y = torch.tensor(Y).float().to(device)
-Y2 = torch.tensor(Y2).float().to(device)
 Z = torch.tensor(Z).float().to(device)
-X2 = torch.cat((X,Z),dim=0)[-X.shape[0]:,:]
+X2 = torch.tensor(X2).float().to(device)
 
-input_dim = X.shape[1]
-output_dim = Y.shape[1]
+datasets = []
+np.random.seed(777)
+samples = np.random.permutation(np.ravel(range(X.shape[0])))
+samples = np.ravel((samples%5).tolist())
+for s in range(5):
+    X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+    datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
 
-# Model Setup
+##########################################################################################
+#Parameter
+##########################################################################################
+
+X_dim = X.shape[1]
+Y_dim = Y.shape[1]
+Z_dim = Z.shape[1]
+hidden_dim = 1024
+latent_dim = 128
 
 class Autoencoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim, latent_dim, output_dim, dropout_rate, l2_reg):
+    def __init__(self, X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg):
         super(Autoencoder, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(X_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -109,28 +193,20 @@ class Autoencoder(nn.Module):
             nn.Linear(hidden_dim, latent_dim)
         )
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim + output_dim*2, hidden_dim),
+            nn.Linear(latent_dim + Z_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, input_dim)
+            nn.Linear(hidden_dim, Y_dim)
         )
         self.predictor = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            # nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, output_dim)
-        )
-        self.predictor2 = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            # nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, output_dim)
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(hidden_dim, Z_dim)
         )
         self.regularization = nn.ModuleList()
         self.regularization.append(nn.Linear(hidden_dim, hidden_dim))
@@ -138,252 +214,130 @@ class Autoencoder(nn.Module):
         self.dropout_rate = dropout_rate
         self.l2_reg = l2_reg
     def forward(self, x):
-        z = self.encoder(x)
-        y_pred = self.predictor(z)
-        y2_pred = self.predictor2(z)
-        concat = torch.cat((z, y_pred, y2_pred), dim=1)
-        x2_pred = self.decoder(concat)
+        k = self.encoder(x)
+        zhat = self.predictor(k)
+        concat = torch.cat((zhat, k), dim=1)
+        yhat = self.decoder(concat)
         reg_loss = 0.0
         for layer in self.regularization:
             reg_loss += torch.norm(layer.weight)
         reg_loss *= self.l2_reg
-        return x2_pred, y_pred, y2_pred, reg_loss
+        return yhat, zhat, reg_loss
 
-# Resulting
+############################################################################################################
+# Modeling
+############################################################################################################
 
 models = []
-datasets = []
-for samplei in sampleset:
-    np.random.seed(samplei)
-    samples = np.random.permutation(np.ravel(range(X.shape[0])))
-    samples = samples//91
-    for s in range(5):
-        datasets.append([X[samples!=s,:],X2[samples!=s,:],Y[samples!=s,:],Y2[samples!=s,:],X[samples==s,:],X2[samples==s,:],Y[samples==s,:],Y2[samples==s,:]])
 
-# Modeling
-
-for s in range(len(datasets)):
-    seed = s
-    X_train,X2_train,Y_train,Y2_train,X_test,X2_test,Y_test,Y2_test = datasets[s]
+for modeli in range(len(datasets)):
+    X_train,Y_train,Z_train,X_test,Y_test,Z_test = datasets[modeli]
+    # Model 0
+    m = 0
+    dropout_rate = 0.5
+    l2_reg = 0.01
+    num_epochs = 10000
+    lr = 0.01
+    early_tol = 1.1
+    patience = 10
+    patience2 = 10
+    train_dataset = TensorDataset(X_train, Y_train, Z_train)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    criterion = nn.MSELoss()
+    counter2 = 0
     best_loss = np.inf
-    for k in range(3):
-        # k = 0
-        dropout_rate = dropout_rates[k]
-        lr = lrs[k]
-        l2_reg = l2_regs[k]
-        num_epochs = num_epochss[k]
-        batch_size = batch_sizes[k]
-        patience = patiences[k]
-        patience2 = patience2s[k]
-        early_tol = early_tols[k]
-        preloss = prelosss[k]
-        preloss = (np.ravel(preloss)/np.sum(preloss)).tolist()
-        counter = 0
-        counter2 = 0
-        #
-        printlog(f"Model {k} start training with seed @ {seed}")
-        #
-        model = Autoencoder(input_dim, hidden_dim, latent_dim, output_dim, dropout_rates[k], l2_regs[k]).to(device)
-        if k>0:
-            model.load_state_dict(best_model_state_dict)
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-        criterion = nn.MSELoss()
-        #
-        train_dataset = TensorDataset(X_train, Y_train, X2_train, Y2_train)
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        #
-        for epoch in range(num_epochs):
-            for xtr, ytr, x2tr, y2tr in train_loader:
-                xtr = xtr.float()
-                ytr = ytr.float()
-                x2tr = x2tr.float()
-                y2tr = y2tr.float()
-                x2hat, yhat, y2hat, l2_loss = model(xtr)
-                loss1 = criterion(x2hat, x2tr)
-                loss2 = criterion(yhat, ytr)
-                loss3 = criterion(y2hat, y2tr)
-                loss = preloss[0]*criterion(x2tr, x2hat) + preloss[1]*criterion(ytr, yhat) + preloss[2]*criterion(y2tr, y2hat) + l2_loss
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-            with torch.no_grad():
-                x2hat2, yhat2, y2hat2, _ = model(X_test)
-                vloss1 = criterion(x2hat2, X2_test)
-                vloss2 = criterion(yhat2, Y_test)
-                vloss3 = criterion(y2hat2, Y2_test)
-                vloss = preloss[0]*vloss1 + preloss[1]*vloss2 + preloss[2]*vloss3 + _
-            if epoch>0:
-                if vloss < best_loss*early_tol:
-                    if vloss < best_loss:
-                        best_loss = vloss
-                        best_model_state_dict = model.state_dict()
-                        counter = 0
-                    else:
-                        counter += 0.5
-                else:
-                    counter += 1
-                if counter >= patience:
-                    printlog(f'Epoch:[{epoch+1}|{num_epochs}], Loss:[{loss:.4f}|{loss1:.4f}|{loss2:.4f}|{loss3:.4f}], Validate:[{vloss:.4f}|{vloss1:.4f}|{vloss2:.4f}|{vloss3:.4f}], Learning:[{counter:.2f}|{counter2:.2f}]')
-                    counter = 0
-                    optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
-                    model.load_state_dict(best_model_state_dict)
-                    counter2 += 1
-                if counter2 > patience2:
-                    printlog(f"Early stopping at epoch {epoch+1}")
-                    break               
-            else:
+    model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.8)
+    # optimizer = optim.Adam(model.parameters(), lr=lr*0.1)
+    printlog(f"Model {modeli}.{m} training start")
+    for epoch in range(num_epochs):
+        for xtr, ytr, ztr in train_loader:
+            xtr = xtr.float()
+            ytr = ytr.float()
+            yhat, zhat, l2_loss = model(xtr)
+            lossz = criterion(ztr, zhat)
+            lossy = criterion(ytr, yhat)
+            wz = 2*lossz / (2*lossz+lossy)
+            wy = 1-wz
+            loss = wy*lossy + wz*lossz + l2_loss
+            optimizer.zero_grad            loss.backward()dfsgdfgsdfgdfsgdfgsdfg
+            optimizer.step()
+        with torch.no_grad():
+            yhate, zhate, l2_losse = model(X_test)
+            vlossz = criterion(Z_test, zhate)
+            vlossy = criterion(Y_test, yhate)
+            vloss = wy*vlossy + wz*vlossz + l2_losse
+        if epoch>0:
+            if vloss < best_loss*early_tol:
                 if vloss < best_loss:
-                        best_loss = vloss
-                        best_model_state_dict = model.state_dict()
-                if (epoch+1)%100 == 0:
-                    printlog(f'Epoch:[{epoch+1}|{num_epochs}], Loss:[{loss:.4f}|{loss1:.4f}|{loss2:.4f}|{loss3:.4f}], Validate:[{vloss:.4f}|{vloss1:.4f}|{vloss2:.4f}|{vloss3:.4f}]')
-    model.load_state_dict(best_model_state_dict) 
-    with torch.no_grad():
-        x2hat2, yhat2, y2hat2, _ = model(X_test)
-        vloss1 = criterion(x2hat2, X2_test)
-        vloss2 = criterion(yhat2, Y_test)
-        vloss3 = criterion(y2hat2, Y2_test)
-        vloss = preloss[0]*vloss1 + preloss[1]*vloss2 + preloss[2]*vloss3 + _
-    printlog(f'Loss:[{loss:.4f}|{loss1:.4f}|{loss2:.4f}|{loss2:.4f}], Validate:[{vloss:.4f}|{vloss1:.4f}|{vloss2:.4f}|{vloss3:.4f}]]')
-    models.append(best_model_state_dict)
-    torch.save(best_model_state_dict, f'model/{arg1}_{note}_{s}.pt')
+                    best_loss = vloss
+                    best_model_state_dict = model.state_dict()
+                    counter = 0
+                else:
+                    counter += ((counter2+1)/10)
+            else:
+                counter += 1
+            if counter >= patience:
+                printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+                counter = 0
+                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.2
+                # optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
+                counter2 += 1
+                model.load_state_dict(best_model_state_dict)
+            if counter2 > patience2:
+                model.load_state_dict(best_model_state_dict)
+                with torch.no_grad():
+                    yhate, zhate, l2_losse = model(X_test)
+                    vlossz = criterion(Z_test, zhate)
+                    vlossy = criterion(Y_test, yhate)
+                    vloss = wy*vlossy + wz*vlossz + l2_losse
+                printlog(f"Model {modeli}.{m} training stop at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
+                models.append(model)
+                break      
+        # if (epoch+1)%1000 == 0:
+        #     printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
 
-printlog(f"{arg1}_{note}_{s} training finished @ {datetime.datetime.now()}")
-
+############################################################################################################
 # Voting
+############################################################################################################
 
-# models = []
-# for i in range(10):
-#     models.append(torch.load(f'model/{arg1}_{note}_{i}.pt'))
+life = []
+for i in range(10, closepvt.shape[0]):
+    data = closepvt[(i-9):(i+1), :]
+    col_mean = np.mean(data, axis=0)
+    life.append(col_mean)
 
-def vote(x, votelen):
-    return x>-np.sort(-x)[votelen]
+life = np.array(life)
 
-k = 2
-Zi = Z
-Ypreds = []
-Yvotes = []
-Ppreds = []
-Lpreds = []
-Bpreds = []
+profit = (closepvt/openpvt)[-5:,:]
+back = (lowpvt/openpvt)[-5:,:]
+life = life[-5:,:]/life[-6:-1]
 
-for coef in models:
-    model = Autoencoder(input_dim, hidden_dim, latent_dim, output_dim, dropout_rates[k], l2_regs[k]).to(device)
-    model.load_state_dict(coef)
-    for s in range(int(2000/len(models)*5)):    
+#Voting
+
+votes = []
+for modeli in models:
+    for s in range(200):
         torch.manual_seed(s)
-        Ypredi = (model(Zi.to(device))[1].cpu().detach().numpy())
-        Ypredi = Yscaler.inverse_transform(Ypredi)
-        Ypreds.append(Ypredi)
-        Ypredi = np.apply_along_axis(vote, 1, Ypredi[range(5),:], 20)
-        Yvotes.append(Ypredi)    
-        Ppreds.append(Ypredi*P)
-        Lpreds.append(Ypredi*L)
-        Bpreds.append(Ypredi*B)
+        Y2, Z2, _ = modeli(X2)
+        Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
+        votes.append(((-Z2).argsort(axis=1))[:,range(10)])
 
-robot_scores = []
-for i in range(len(Ypreds)):
-    robot_scores.append(np.ravel(np.concatenate((Ppreds[i].sum(axis=1),Bpreds[i].sum(axis=1),Lpreds[i].sum(axis=1)),axis=0)))
+scores = []
+for votei in votes:
+    scorei = []
+    for i in range(5):
+        scorei.append([np.mean(profit[i,votei[i]]),np.mean(life[i,votei[i]]),np.mean(back[i,votei[i]])])
+    scorei = np.asarray(scorei)
+    scorei = np.append(scorei.mean(axis=0),np.min(scorei[:,2]))
+    scorei = np.append(scorei,(scorei[range(2)])/(scorei[2]))
+    scores.append(scorei)
 
-Ypreds = np.asarray(Ypreds)
+scores = pd.DataFrame(np.asarray(scores))
+scores.columns = ['profit','life','back','minback','avgprofit','avglife']
 
-test = np.asarray(robot_scores)/20
-weight = np.asarray(([1,2,3,4,5]*3)).reshape(1,15)
-weight = weight/sum([1,2,3,4,5])
-test = (test*weight)
-test1 = test[:,range(5)].sum(axis=1)
-test2 = test[:,range(5,10)].sum(axis=1)
-test3 = test[:,range(10,15)].sum(axis=1)
-test = pd.DataFrame({'score1':test1,'score2':-test2,'score3':test3})
+scores = pd.DataFrame((-np.asarray(scores)).argsort(axis=0))
+scores.columns = ['profit','life','back','minback','avgprofit','avglife']
+scores.head(int(scores.shape[0]/10))
 
-robots = rankdata(-test,axis=0)
-robots = np.ravel((robots<2000).mean(axis=1))
-robots = np.ravel(robots>0.5).tolist()
-robots = np.ravel(range(len(Ypreds)))[robots].tolist()
-rlt = []
-for i in range(6):
-    logging.debug(i)
-    Ypredi = Ypreds[robots,i,:]
-    Yvotei = np.apply_along_axis(vote, 1, Ypredi, 20)
-    out = pd.DataFrame(dict({'day':i-5,'code':codes,'vote':Yvotei.sum(axis=0),'mean':Ypredi.mean(axis=0),'std':Ypredi.std(axis=0)})).sort_values('vote',ascending=False)
-    out['cumvote'] = np.cumsum(out['vote']/len(robots)*10)
-    out = out[out['cumvote']<100]
-    out['share'] = out['vote']/np.sum(out['vote'])
-    printlog(out)
-    if(i<5):
-        printlog(np.sum(P[i,np.ravel(out.index)] * out['share']))
-    rlt.append(out)
-
-printlog([arg1,note,hidden_dim,latent_dim,dropout_rates,lrs,l2_regs,num_epochss,early_tols,batch_sizes,patiences,patience2s,prelosss])
-pd.concat(rlt,axis=0).to_csv(f'rlt/{arg1}_{note}.csv')
-os.system(f'rm data/{arg1}.npz')
-
-# Voting 2
-
-# k = 2
-# Zi = Z
-# Ypreds = []
-# Yvotes = []
-# Ppreds = []
-# Lpreds = []
-# Bpreds = []
-
-# for coef in models:
-#     model = Autoencoder(input_dim, hidden_dim, latent_dim, output_dim, dropout_rates[k], l2_regs[k]).to(device)
-#     model.load_state_dict(coef)
-#     for s in range(int(1000)):    
-#         torch.manual_seed(s)
-#         Ypredi = (model(Zi.to(device))[1].cpu().detach().numpy())
-#         Ypredi = Yscaler.inverse_transform(Ypredi)
-#         Ypreds.append(Ypredi)
-#         Ypredi = np.apply_along_axis(vote, 1, Ypredi[range(5),:], 20)
-#         Yvotes.append(Ypredi)    
-#         Ppreds.append(Ypredi*P)
-#         Lpreds.append(Ypredi*L)
-#         Bpreds.append(Ypredi*B)
-
-# robot_scores = []
-# for i in range(len(Ypreds)):
-#     robot_scores.append(np.ravel(np.concatenate((Ppreds[i].sum(axis=1),Bpreds[i].sum(axis=1),Lpreds[i].sum(axis=1)),axis=0)))
-
-# Ypreds = np.asarray(Ypreds)
-# Bpreds = np.asarray(Bpreds)
-
-# test = np.asarray(robot_scores)/20
-# weight = np.asarray(([1,2,3,4,5]*3)).reshape(1,15)
-# weight = weight/sum([1,2,3,4,5])
-# test = (test*weight)
-# test1 = test[:,range(5)].sum(axis=1)
-# test2 = test[:,range(5,10)].sum(axis=1)
-# test3 = test[:,range(10,15)].sum(axis=1)
-# test = pd.DataFrame({'score1':test1,'score2':-test2,'score3':test3})
-
-# #half votes
-
-# rlt = []
-# for i in range(10):
-#     np.random.seed(i*111)
-#     samples = np.random.permutation(np.ravel(range(test.shape[0])))
-#     samples = samples[range(int(len(samples)/10))]
-#     testi = test.iloc()[samples,:]
-#     Ypredsi = Ypreds[samples,:,:]
-#     Bpredsi = Bpreds[samples,:,:]
-#     robots = rankdata(-testi,axis=0)
-#     robots = np.ravel((robots<int(test.shape[0]*0.2)).mean(axis=1))
-#     robots = np.ravel(robots>0.5).tolist()
-#     robots = np.ravel(range(len(Ypredsi)))[robots].tolist()
-#     Ypredi = Ypredsi[robots,5,:]
-#     Yvotei = np.apply_along_axis(vote, 1, Ypredi, 20)
-#     out = pd.DataFrame(dict({'day':i,'code':codes,'vote':Yvotei.sum(axis=0),'mean':Ypredi.mean(axis=0),'std':Ypredi.std(axis=0)})).sort_values('vote',ascending=False)
-#     out['cumvote'] = np.cumsum(out['vote']/len(robots)*10)
-#     out = out[out['cumvote']<100]
-#     out['share'] = out['vote']/np.sum(out['vote'])
-#     rlt.append(out)
-
-# rlt = pd.concat([df for df in rlt])
-# rlt = rlt.groupby('code').agg({'vote':'sum','mean':'mean','std':'mean'})
-# rlt['risk'] = rlt['mean']-rlt['std']
-# rlt['share'] = rlt['vote']/np.sum(rlt['vote'])
-# rlt = rlt.sort_values('share',ascending=False)
-# rlt
-
+codes[votes[437][5]]
