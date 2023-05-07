@@ -21,9 +21,9 @@ import math
 #Parametering
 ##########################################################################################
 
-# arg1 = '20230411'
-# prd1 = 40
-# note = '2305070634'
+arg1 = int(sys.argv[1])
+prd1 = int(sys.argv[2])
+note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
 seeds = [101,777]
 hidden_dim = 1024
@@ -40,8 +40,8 @@ num_robots = 1000
 prop_votes = 0.05
 prop_robots = 0.1
 prop_codes = 0.95
-w = [1,2,3,4,5]
-w = (w/np.sum(w)).reshape(5,1)
+w0 = [1,2,3,4,5]
+w = (w0/np.sum(w0)).reshape(5,1)
 
 if(note=='test'):
   def printlog(x):
@@ -55,7 +55,7 @@ else:
     )
     printlog = logging.debug
 
-printlog([arg1,arg2,note,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,num_robots,prop_votes,prop_robots,prop_codes,w])
+printlog([arg1,prd1,note,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,num_robots,prop_votes,prop_robots,prop_codes,w0])
 
 if torch.cuda.is_available():
     printlog("GPU is available")
