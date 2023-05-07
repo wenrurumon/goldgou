@@ -118,7 +118,7 @@ Xvol = []
 for i in range(volpvt.shape[0]-(prd1-1)):
     xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
     xi = np.nan_to_num(xi,nan=-1)
-    # xi = xi[-10:,:]
+    xi = xi[-10:,:]
     Xvol.append(np.ravel(xi.T))
 
 Xvol = np.asarray(Xvol)
@@ -164,12 +164,13 @@ Z = torch.tensor(Z).float().to(device)
 X2 = torch.tensor(X2).float().to(device)
 
 datasets = []
-np.random.seed(777)
-samples = np.random.permutation(np.ravel(range(X.shape[0])))
-samples = np.ravel((samples%5).tolist())
-for s in range(5):
-    X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
-    datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+for seed in [303,777]:
+    np.random.seed(seed)
+    samples = np.random.permutation(np.ravel(range(X.shape[0])))
+    samples = np.ravel((samples%5).tolist())
+    for s in range(5):
+        X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+        datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
 
 ##########################################################################################
 #Parameter
@@ -229,7 +230,9 @@ class Autoencoder(nn.Module):
 ############################################################################################################
 
 models0 = []
-models = []
+models1 = []
+
+##############
 
 for modeli in range(len(datasets)):
     X_train,Y_train,Z_train,X_test,Y_test,Z_test = datasets[modeli]
@@ -248,9 +251,8 @@ for modeli in range(len(datasets)):
     counter2 = 0
     best_loss = np.inf
     model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.8)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     # optimizer = optim.Adam(model.parameters(), lr=lr*0.1)
-    printlog(f"Model {modeli}.{m} training start")
     for epoch in range(num_epochs):
         for xtr, ytr, ztr in train_loader:
             xtr = xtr.float()
@@ -258,7 +260,8 @@ for modeli in range(len(datasets)):
             yhat, zhat, l2_loss = model(xtr)
             lossz = criterion(ztr, zhat)
             lossy = criterion(ytr, yhat)
-            wz = .5*lossz / (.5*lossz+lossy)
+            wwz = epoch/1000
+            wz = wwz*lossz / (wwz*lossz+lossy)
             wy = 1-wz
             loss = wy*lossy + wz*lossz + l2_loss
             optimizer.zero_grad()
@@ -269,6 +272,8 @@ for modeli in range(len(datasets)):
             vlossz = criterion(Z_test, zhate)
             vlossy = criterion(Y_test, yhate)
             vloss = wy*vlossy + wz*vlossz + l2_losse
+        if epoch==0:
+            printlog(f'Model {modeli}.{m} training start, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
         if epoch>0:
             if vloss < best_loss*early_tol:
                 if vloss < best_loss:
@@ -283,7 +288,7 @@ for modeli in range(len(datasets)):
                 printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
                 counter = 0
                 optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.2
-                # optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
+                optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
                 counter2 += 1
                 model.load_state_dict(best_model_state_dict)
             if counter2 > patience2:
@@ -295,12 +300,13 @@ for modeli in range(len(datasets)):
                     vloss = wy*vlossy + wz*vlossz + l2_losse
                 printlog(f"Model {modeli}.{m} training stop at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
                 models0.append(model)
-                break      
+                break    
+        if (epoch+1)%1000 == 0:
+            printlog(f"Model {modeli}.{m} training at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
     # Model 1
     X_train,Y_train,Z_train,X_test,Y_test,Z_test = X[-200:,:],Y[-200:,:],Z[-200:,:],X[-100:,:],Y[-100:,:],Z[-100:,:]
     # X_train,Y_train,Z_train,X_test,Y_test,Z_test = datasets[modeli]
     m = 1
-    num_epochs = 10000
     early_tol = 1.1
     patience = 10
     patience2 = 10
@@ -310,14 +316,14 @@ for modeli in range(len(datasets)):
     counter2 = 0
     best_loss = np.inf
     printlog(f"Model {modeli}.{m} training start")
-    for epoch in range(num_epochs):
+    for epoch in range(epoch,num_epochs):
         for xtr, ytr, ztr in train_loader:
             xtr = xtr.float()
             ytr = ytr.float()
             yhat, zhat, l2_loss = model(xtr)
             lossz = criterion(ztr, zhat)
             lossy = criterion(ytr, yhat)
-            wz = 2*lossz / (2*lossz+lossy)
+            wz = 5*lossz / (5*lossz+lossy)
             wy = 1-wz
             loss = wy*lossy + wz*lossz + l2_loss
             optimizer.zero_grad()
@@ -342,7 +348,7 @@ for modeli in range(len(datasets)):
                 printlog(f'Model {modeli}.{m}, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
                 counter = 0
                 optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.2
-                # optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
+                optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
                 counter2 += 1
                 model.load_state_dict(best_model_state_dict)
             if counter2 > patience2:
@@ -353,16 +359,18 @@ for modeli in range(len(datasets)):
                     vlossy = criterion(Y_test, yhate)
                     vloss = wy*vlossy + wz*vlossz + l2_losse
                 printlog(f"Model {modeli}.{m} training stop at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
-                models.append(model)
-                break    
+                models1.append(model)
+                break   
+            if (epoch+1)%1000 == 0:
+                printlog(f"Model {modeli}.{m} training at epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]") 
 
-models0, models1 = models0, models1
+#2023-05-06 22:20:17.873367 Model 0.0 training start
 
 ############################################################################################################
 # Voting
 ############################################################################################################
 
-models = models1
+models = models0
 num_robots = 1000
 num_votes = int(len(codes)*0.05)
 
@@ -388,13 +396,15 @@ for modeli in models:
         Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
         votes.append(((-Z2).argsort(axis=1))[:,range(num_votes)])
 
+w = [1,2,3,4,5]
+w = (w/np.sum(w)).reshape(5,1)
 scores = []
 for votei in votes:
     scorei = []
     for i in range(5):
         scorei.append([np.mean(profit[i,votei[i]]),np.mean(life[i,votei[i]]),np.mean(back[i,votei[i]])])
     scorei = np.asarray(scorei)
-    scorei = np.append(scorei.mean(axis=0),np.min(scorei[:,2]))
+    scorei = np.append((scorei * w).sum(axis=0),np.min(scorei[:,2]))
     scorei = np.append(scorei,(scorei[range(2)])/(scorei[2]))
     scores.append(scorei)
 
@@ -417,6 +427,7 @@ rlt['codes'] = rlt.index
 rlt['date'] = arg1
 rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
 
+# rlt = rlt[rlt['idx']>np.quantile(rlt['idx'],0.9)]
 rlt = rlt[rlt['idx']>1]
 rlt['share'] = rlt['count']/sum(rlt['count'])
 
