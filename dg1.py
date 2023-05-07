@@ -21,13 +21,9 @@ import math
 #Parametering
 ##########################################################################################
 
-arg1 = int(sys.argv[1])
-prd1 = int(sys.argv[2])
-note = datetime.datetime.now().strftime("%y%m%d%H%M")
-
 # arg1 = '20230411'
 # prd1 = 40
-# note = 'test'
+# note = '2305070634'
 
 seeds = [101,777]
 hidden_dim = 1024
@@ -54,7 +50,7 @@ else:
     logging.basicConfig(
         level=logging.DEBUG, 
         format='%(asctime)s %(message)s', 
-        filename=f'log/dg1_{arg1}_{note}.log',  
+        filename=f'log/dg1_{arg1}_{prd1}_{note}.log',  
         filemode='a'  
     )
     printlog = logging.debug
