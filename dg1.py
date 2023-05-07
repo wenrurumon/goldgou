@@ -55,7 +55,7 @@ else:
     )
     printlog = logging.debug
 
-printlog([arg1,arg2,note,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,num_robots,prop_votes,prop_robots,prop_codes])
+printlog([arg1,arg2,note,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,num_robots,prop_votes,prop_robots,prop_codes,w])
 
 if torch.cuda.is_available():
     printlog("GPU is available")
@@ -310,7 +310,7 @@ def voting(num_robots,prop_votes,prop_robots,prop_codes,w,models):
 ##########################################################################################
 
 #Data Processing
-datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=[101,777])
+datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=seeds)
 X_dim = X.shape[1]
 Y_dim = Y.shape[1]
 Z_dim = Z.shape[1]
