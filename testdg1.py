@@ -41,6 +41,7 @@ w0 = [1,2,3,4,5]
 w = (w0/np.sum(w0)).reshape(5,1)
 
 note = '20230508'
+# note = 'test'
 
 if(note=='test'):
   def printlog(x):
@@ -408,9 +409,9 @@ RAW['date'] = pd.to_datetime(RAW['date'])
 rawdates = np.sort(np.unique(RAW['date']))
 datekey = rawdates[867:(len(rawdates)-1)]
 
-for arg1 in range(len(datekey)):
-    printlog(f"load data for {np.datetime_as_string(datekey[arg1+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')}")
-    datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = testdata(arg1,prd1=40)
+for datei in range(len(datekey)):
+    printlog(f"load data for {np.datetime_as_string(datekey[datei+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')}")
+    datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = testdata(datei,prd1=40)
     X_dim = X.shape[1]
     Y_dim = Y.shape[1]
     Z_dim = Z.shape[1]
@@ -418,10 +419,14 @@ for arg1 in range(len(datekey)):
     for i in range(len(datasets)):
         modeli = train(i,X_dim,Y_dim,Z_dim,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum)
         models.append(modeli)
-
-    arg1 = np.datetime_as_string(datekey[arg1+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')
+    arg1 = np.datetime_as_string(datekey[datei+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')
     rlt,votes = voting(num_robots,prop_votes,prop_robots,prop_codes,w,models)
     printlog(rlt)
+    valdata = RAW[RAW['date']==datekey[datei+1]].drop_duplicates()
+    valdata = valdata[(valdata['code'].isin(rlt['codes'])) & (valdata['date']==max(valdata['date']))]
+    valdata = valdata.assign(profit = valdata['close']/valdata['open'])
+    valdata = rlt.rename(columns={'codes': 'code', 'share': 'share'}).loc[:, ['code', 'share', 'idx']].merge(valdata,on='code')
+    printlog(f"Profit: {np.sum(valdata['profit'] * valdata['share'])/sum(valdata['share'])}")
     np.savez(f"rlt/tvote_{arg1}.npz",votes=votes,rlt=rlt)
 
 
