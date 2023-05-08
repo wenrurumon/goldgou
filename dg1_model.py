@@ -116,6 +116,7 @@ def processdata(arg1,prd1,seeds=seeds):
     for i in range(volpvt.shape[0]-(prd1-1)):
         xi = volpvt[range(i, i + (prd1-1)), :] 
         xi = xi / (np.nan_to_num(xi, nan=0).mean(axis=1)).reshape(prd1, 1)
+        #xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
         Xvol2.append(np.ravel(xi.T))
         xi = xi[-10:,:]
