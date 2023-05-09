@@ -393,6 +393,8 @@ def voting(num_robots,prop_votes,prop_robots,prop_codes,w,models):
     return(rlt,votes)
 
 def voting2(votes,prop_votes,prop_robots,prop_codes,w):
+    num_votes = int(len(codes)*prop_votes)
+    votes = votes[:,:,range(num_votes)]
     num_robots = votes.shape[0]
     scores = []
     for votei in votes:
@@ -427,8 +429,8 @@ def voting2(votes,prop_votes,prop_robots,prop_codes,w):
 ##########################################################################################
 
 num_robots = 1000
-prop_votes = 0.1
-prop_robots = 0.05
+prop_votes = 0.05
+prop_robots = 0.1
 prop_codes = 0.95
 w0 = [1,2,3,4,5]
 w = (w0/np.sum(w0)).reshape(5,1)
@@ -439,7 +441,8 @@ rawdates = np.sort(np.unique(RAW['date']))
 datekey = rawdates[867:(len(rawdates)-1)]
 
 profits = []
-for datei in range(24):
+rlts = []
+for datei in range(100):
     printlog(f"Revoting for {np.datetime_as_string(datekey[datei+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')}")
     datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = testdata(datei,prd1=40)
     X_dim = X.shape[1]
@@ -454,6 +457,7 @@ for datei in range(24):
     valdata = valdata.assign(profit = valdata['close']/valdata['open'])
     valdata = rlt.rename(columns={'codes': 'code', 'share': 'share'}).loc[:, ['code', 'share', 'idx']].merge(valdata,on='code')
     profits.append([int(arg1),np.sum(valdata['profit'] * valdata['share'])/sum(valdata['share'])])
+    rlts.append(rlt)
+    printlog([profits[len(profits)-1],np.prod(np.asarray(profits)[:,1])])
 
-
-
+pd.DataFrame(np.concatenate(rlts,axis=0)[:,1:]).to_csv('rlt/testback.csv')
