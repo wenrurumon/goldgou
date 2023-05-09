@@ -442,7 +442,7 @@ datekey = rawdates[867:(len(rawdates)-1)]
 
 profits = []
 rlts = []
-for datei in range(100):
+for datei in range(200):
     printlog(f"Revoting for {np.datetime_as_string(datekey[datei+1], unit='D').replace('-', '').replace(':', '').replace(' ', '')}")
     datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = testdata(datei,prd1=40)
     X_dim = X.shape[1]
@@ -460,4 +460,5 @@ for datei in range(100):
     rlts.append(rlt)
     printlog([profits[len(profits)-1],np.prod(np.asarray(profits)[:,1])])
 
-pd.DataFrame(np.concatenate(rlts,axis=0)[:,1:]).to_csv('rlt/testback.csv')
+
+# pd.DataFrame(np.concatenate(rlts,axis=0)[:,1:]).to_csv('rlt/testback.csv')
