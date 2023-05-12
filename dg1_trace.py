@@ -21,13 +21,15 @@ import math
 #Parametering
 ##########################################################################################
 
-num_robots = 1000
-prop_votes = 0.1
-prop_robots = 0.05
-prop_codes = 0.9
-w0 = [1,2,3,4,5]
+arg1 = 'trace0512'
+prd1 = 40
+# note = 'trace0512'
 
-seeds = [101,777]
+# arg1 = int(sys.argv[1])
+# prd1 = int(sys.argv[2])
+note = datetime.datetime.now().strftime("%y%m%d%H%M")
+
+seeds = [101,777,303,602]
 hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
@@ -38,10 +40,25 @@ early_tol = 1.1
 patience = 10
 patience2 = 5
 momentum = 0.99
+num_robots = 1000
+prop_votes = 0.05
+prop_robots = 0.1
+prop_codes = 0.95
+w0 = [1,2,3,4,5]
 w = (w0/np.sum(w0)).reshape(5,1)
+target = 'life'
 
-def printlog(x):
+if(note=='test'):
+  def printlog(x):
     print(datetime.datetime.now(), x)
+else:
+    logging.basicConfig(
+        level=logging.DEBUG, 
+        format='%(asctime)s %(message)s', 
+        filename=f'log/dg1_{arg1}_{prd1}_{note}.log',  
+        filemode='a'  
+    )
+    printlog = logging.debug
 
 if torch.cuda.is_available():
     printlog("GPU is available")
@@ -262,7 +279,9 @@ def voting(num_robots,prop_votes,prop_robots,prop_codes,w,models):
             torch.manual_seed(s)
             Y2, Z2, _ = modeli(X2)
             Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
-            votes.append(((-Z2).argsort(axis=1))[:,range(num_votes)])
+            votes.append(((-Z2).argsort(axis=1)))
+    allvotes = np.asarray(votes)
+    votes = allvotes[:,:,range(num_votes)]
     scores = []
     for votei in votes:
         scorei = []
@@ -289,34 +308,103 @@ def voting(num_robots,prop_votes,prop_robots,prop_codes,w,models):
     rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
     rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],prop_codes)]
     rlt['share'] = rlt['count']/sum(rlt['count'])
+    return(rlt,allvotes)
+
+def roboting(num_robots,models):
+    votes = []
+    for modeli in models:
+        votei = []
+        for s in range(int(num_robots/len(models))):
+            torch.manual_seed(s)
+            Y2, Z2, _ = modeli(X2)
+            Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
+            votei.append(((-Z2).argsort(axis=1)))
+        votes.append(np.asarray(votei))
+    return(votes)
+
+def voting(votes,num_robots,prop_votes,prop_robots,prop_codes,target,w):
+    printlog([len(votes),num_robots,prop_votes,prop_robots,prop_codes,target,w])
+    num_votes = int(len(codes)*prop_votes)
+    votes2 = []
+    for votei in votes:
+        votes2.append(votei[range(int(num_robots/np.concatenate(votes,axis=0).shape[0]*votei.shape[0])),:])
+    votes = np.concatenate(votes2,axis=0)[:,:,range(num_votes)]
+    scores = []
+    for votei in votes:
+        scorei = []
+        for i in range(5):
+            scorei.append([np.mean(profit[i,votei[i]]),np.mean(life[i,votei[i]]),np.mean(back[i,votei[i]])])
+        scorei = np.asarray(scorei)
+        scorei = np.append((scorei * w).sum(axis=0),np.min(scorei[:,2]))
+        scorei = np.append(scorei,(scorei[range(2)])/(scorei[2]))
+        scores.append(scorei)
+    scores = pd.DataFrame(np.asarray(scores))
+    scores.columns = ['profit','life','back','minback','avgprofit','avglife']
+    scores['pl'] = scores['profit'] * scores['back']
+    scores['apl'] = scores['avgprofit'] * scores['avglife']
+    scores = pd.DataFrame((-np.asarray(scores)).argsort(axis=0))
+    scores.columns = ['profit','life','back','minback','avgprofit','avglife','pl','apl']
+    scores = scores.head(int(num_robots*prop_robots))
+    votes2 = []
+    for i in range(scores.shape[0]):
+        votes2.append(codes[votes[scores[target][i]][5]])
+    votes2 = np.ravel(votes2)
+    rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
+    rlt['codes'] = rlt.index
+    rlt['date'] = arg1
+    rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
+    rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],prop_codes)]
+    rlt['share'] = rlt['count']/sum(rlt['count'])
     return(rlt)
 
 ##########################################################################################
-#Revoting
+#Modeling
 ##########################################################################################
 
-logs = []
-for i in np.sort(os.listdir('log')):
-    logs.append(i.replace('.log','').split('_'))
+# #Process
+# datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=seeds)
+# X_dim = X.shape[1]
+# Y_dim = Y.shape[1]
+# Z_dim = Z.shape[1]
 
-logs = np.asarray(logs)
+# #Modeling
+# models = []
+# for i in range(len(datasets)):
+#     modeli = train(i,X_dim,Y_dim,Z_dim,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum)
+#     models.append(modeli)
+
+# #Voting
+
+# votes = roboting(10000,models)
+# np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
+# rlt = voting(votes,num_robots,prop_votes,prop_robots,prop_codes,target,w)
+# printlog(rlt)
+# printlog(voting(votes,num_robots=10000,prop_votes=0.05,prop_robots=0.1,prop_codes=0.9,target='life',w=w))
+
+##########################################################################################
+#Backdat
+##########################################################################################
+
+files = []
+for arg1 in np.sort(os.listdir('data')).tolist():
+    if 'raw' in arg1:
+        files.append(int(arg1.replace('.csv','').replace('raw','')))
 
 rlts = []
-for i in range(logs.shape[0]):
-    arg1 = int(logs[i,1])
-    prd1 = int(logs[i,2])
-    note = logs[i,3]
+for arg1 in files:
+    torch.cuda.empty_cache()
+    #Data Processing
     datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=seeds)
     X_dim = X.shape[1]
     Y_dim = Y.shape[1]
     Z_dim = Z.shape[1]
+    #Modeling
     models = []
     for i in range(len(datasets)):
-        modeli = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-        modeli.load_state_dict(torch.load(f'model/dg1_{arg1}_{prd1}_{note}_{i}.pt'))
+        modeli = train(i,X_dim,Y_dim,Z_dim,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum)
         models.append(modeli)
-    rlt = voting(num_robots,prop_votes,prop_robots,prop_codes,w,models)
+    #Voting
+    votes = roboting(10000,models)
+    np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
+    rlt = voting(votes,num_robots,prop_votes,prop_robots,prop_codes,target,w)
     rlts.append(rlt)
-
-rlts = pd.concat(rlts,axis=0)
-rlts.to_csv(f'rlt/voting_{int(prop_codes*100)}.csv')
