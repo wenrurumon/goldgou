@@ -21,13 +21,13 @@ import math
 #Parametering
 ##########################################################################################
 
-arg1 = 20230512
-prd1 = 40
-note = 'test'
+# arg1 = 'trace0512'
+# prd1 = 40
+# note = 'trace0512'
 
-# arg1 = int(sys.argv[1])
-# prd1 = int(sys.argv[2])
-# note = datetime.datetime.now().strftime("%y%m%d%H%M")
+arg1 = int(sys.argv[1])
+prd1 = int(sys.argv[2])
+note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
 seeds = [101,777,303,602]
 hidden_dim = 1024
