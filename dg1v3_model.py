@@ -21,13 +21,13 @@ import math
 #Parametering
 ##########################################################################################
 
-# arg1 = 'trace0512'
-# prd1 = 40
-# note = 'test'
+arg1 = '20230512'
+prd1 = 40
+note = 'test'
 
-arg1 = int(sys.argv[1])
-prd1 = int(sys.argv[2])
-note = datetime.datetime.now().strftime("%y%m%d%H%M")
+# arg1 = int(sys.argv[1])
+# prd1 = int(sys.argv[2])
+# note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
 seeds = [101,777,303,602]
 hidden_dim = 1024
@@ -40,13 +40,9 @@ early_tol = 1.1
 patience = 10
 patience2 = 5
 momentum = 0.99
-num_robots = 1000
 prop_votes = 0.05
-prop_robots = 0.1
-prop_codes = 0.95
-w0 = [1,2,3,4,5]
-w = (w0/np.sum(w0)).reshape(5,1)
-target = 'life'
+prop_robots = 0.05
+prop_score = 0.5
 
 if(note=='test'):
   def printlog(x):
@@ -322,7 +318,7 @@ def roboting(num_robots,models):
         votes.append(np.asarray(votei))
     return(votes)
 
-def voting(votes,prop_votes,prop_score):
+def voting(votes,prop_votes,prop_robots,prop_score):
     votes = votes[:,:,range(int(prop_votes * len(codes)))]
     score = []
     for j in range(votes.shape[0]):
@@ -334,15 +330,15 @@ def voting(votes,prop_votes,prop_score):
         for i in range(5):
             scorei *= np.mean(today[i,votei[i]] + overnite[i,votei[i]] - 2)+1
         score.append(scorei)
-    votes = votes[score>=np.quantile(score,0.95),5,:]
+    votes = votes[score>=np.quantile(score,1-prop_robots),5,:]
     rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes)), orient='index', columns=['count']).sort_values('count',ascending=False)
     rlt['codes'] = codes[rlt.index]
     rlt['date'] = arg1
-    rlt['prop'] = np.cumsum(rlt['count'])/sum(rlt['count'])
-    rlt = rlt[rlt['prop']<prop_score]
+    rlt['prop'] = rlt['count']/votes.shape[0]*0.1
+    rlt['cumprop'] = np.cumsum(rlt['prop'])
+    rlt = rlt[rlt['cumprop']<1]
     rlt['share'] = rlt['count']/sum(rlt['count'])
-    retur(rlt)
-
+    return(rlt.iloc()[:,[0,1,2,5]])
 
 ##########################################################################################
 #Modeling
@@ -364,3 +360,34 @@ for i in range(len(datasets)):
 
 votes = roboting(10000,models)
 np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
+printlog(voting(votes,prop_votes,prop_robots,prop_score)
+
+
+##########################################################################################
+#Backdat
+##########################################################################################
+
+# files = []
+# for arg1 in np.sort(os.listdir('data')).tolist()[20:]:
+#     if 'raw' in arg1:
+#         files.append(int(arg1.replace('.csv','').replace('raw','')))
+
+# rlts = []
+# for arg1 in files:
+#     torch.cuda.empty_cache()
+#     #Data Processing
+#     datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=seeds)
+#     X_dim = X.shape[1]
+#     Y_dim = Y.shape[1]
+#     Z_dim = Z.shape[1]
+#     #Modeling
+#     models = []
+#     for i in range(len(datasets)):
+#         modeli = train(i,X_dim,Y_dim,Z_dim,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum)
+#         models.append(modeli)
+#     #Voting
+#     votes = roboting(10000,models)
+#     np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
+#     rlt = voting(votes,num_robots,prop_votes,prop_robots,prop_codes,target,w)
+#     rlts.append(rlt)
+
