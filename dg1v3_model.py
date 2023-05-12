@@ -40,6 +40,7 @@ early_tol = 1.1
 patience = 10
 patience2 = 5
 momentum = 0.99
+num_robots = 1000
 prop_votes = 0.05
 prop_robots = 0.05
 prop_score = 0.5
@@ -113,7 +114,9 @@ def processdata(arg1,prd1,seeds=seeds):
     Xvol = []
     Xvol2 = []
     for i in range(volpvt.shape[0]-(prd1-1)):
-        xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
+        xi = volpvt[range(i, i + (prd1-1)), :] 
+        xi = xi / (np.nan_to_num(xi, nan=0).mean(axis=1)).reshape(prd1, 1)
+        # xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
         Xvol2.append(np.ravel(xi.T))
         xi = xi[-10:,:]
@@ -360,7 +363,7 @@ for i in range(len(datasets)):
 
 votes = roboting(10000,models)
 np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
-printlog(voting(votes,prop_votes,prop_robots,prop_score)
+voting(votes,prop_votes,prop_robots,prop_score)
 
 
 ##########################################################################################
