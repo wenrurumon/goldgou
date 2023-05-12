@@ -362,7 +362,7 @@ for i in range(len(datasets)):
 #Voting
 
 votes = roboting(10000,models)
-np.savez(f'rlt/dg1_{arg1}_{prd1}_{note}.npz',votes=votes)
+np.savez(f'rlt/dg1v3_{arg1}_{prd1}_{note}.npz',votes=votes)
 voting(votes,prop_votes,prop_robots,prop_score)
 
 
