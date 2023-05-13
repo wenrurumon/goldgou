@@ -40,10 +40,10 @@ early_tol = 1.1
 patience = 10
 patience2 = 5
 momentum = 0.99
-num_robots = 1000
-prop_votes = 0.05
+num_robots = 10000
+prop_votes = 0.1
 prop_robots = 0.05
-prop_score = 0.5
+hat_inv = 0.05
 
 if(note=='test'):
   def printlog(x):
@@ -68,7 +68,7 @@ else:
 #Modules
 ##########################################################################################
 
-def processdata(arg1,prd1,seeds=seeds):
+def processdata(arg1,prd1,seeds):
     printlog(f'load data: data/raw{arg1}.csv')
     raw = pd.read_csv(f'data/raw{arg1}.csv')
     raw =  raw.drop_duplicates()
@@ -114,8 +114,9 @@ def processdata(arg1,prd1,seeds=seeds):
     Xvol = []
     Xvol2 = []
     for i in range(volpvt.shape[0]-(prd1-1)):
-        xi = volpvt[range(i, i + (prd1-1)), :] 
+        xi = volpvt[range(i, i + (prd1)), :] 
         xi = xi / (np.nan_to_num(xi, nan=0).mean(axis=1)).reshape(prd1, 1)
+        # xi = volpvt[range(i, i + (prd1-1)), :] 
         # xi = volpvt[range(i, i + (prd1-1)), :] / volpvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
         Xvol2.append(np.ravel(xi.T))
@@ -321,23 +322,31 @@ def roboting(num_robots,models):
         votes.append(np.asarray(votei))
     return(votes)
 
-def voting(votes,prop_votes,prop_robots,prop_score):
-    votes = votes[:,:,range(int(prop_votes * len(codes)))]
-    score = []
+def voting(votes,prop_votes,prop_robots,hat_inv):
+    votes = votes.reshape((np.prod(votes.shape[0:2]), 6, len(codes)))[:,:,range(int(prop_votes * len(codes)))]
+    scores = []
     for j in range(votes.shape[0]):
         votei = votes[j]
         today = closepvt[-5:,:]/openpvt[-5:,:]
         overnite = openpvt[-5:,:]/closepvt[-6:-1,:]
         overnite[0,:] = 1
-        scorei = 1
+        scorei = []
         for i in range(5):
-            scorei *= np.mean(today[i,votei[i]] + overnite[i,votei[i]] - 2)+1
-        score.append(scorei)
+            scorei.append([np.mean(today[i,votei[i]]-1),np.mean(overnite[i,votei[i]]-1)])
+        scorei = np.asarray(scorei)
+        scorei = np.concatenate((scorei,scorei.sum(axis=1,keepdims=True)),axis=1)
+        scorei = np.append(np.append(scorei.mean(axis=0),scorei.min(axis=0)),np.prod(scorei[:,2]+1)-1)
+        scores.append(scorei)
+    scores = np.asarray(scores)
+    scores = np.concatenate((scores,(scores[:,6,np.newaxis]+1)/(scores[:,5,np.newaxis]+1)),axis=1)
+    scores = pd.DataFrame(scores)
+    scores.columns = ['avgtoday','avgovernite','avgtotal','mintoday','minovernite','mintotal','accum','accumprisk']
+    score = np.ravel(scores['accumprisk'])
     votes = votes[score>=np.quantile(score,1-prop_robots),5,:]
     rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes)), orient='index', columns=['count']).sort_values('count',ascending=False)
     rlt['codes'] = codes[rlt.index]
-    rlt['date'] = arg1
-    rlt['prop'] = rlt['count']/votes.shape[0]*0.1
+    rlt['date'] = votefile.split('_')[1]
+    rlt['prop'] = rlt['count']/votes.shape[0]*hat_inv
     rlt['cumprop'] = np.cumsum(rlt['prop'])
     rlt = rlt[rlt['cumprop']<1]
     rlt['share'] = rlt['count']/sum(rlt['count'])
@@ -348,7 +357,7 @@ def voting(votes,prop_votes,prop_robots,prop_score):
 ##########################################################################################
 
 #Process
-datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes, closepvt, openpvt = processdata(arg1,prd1,seeds=seeds)
+datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(arg1,prd1,seeds=seeds)
 X_dim = X.shape[1]
 Y_dim = Y.shape[1]
 Z_dim = Z.shape[1]
@@ -361,10 +370,9 @@ for i in range(len(datasets)):
 
 #Voting
 
-votes = roboting(10000,models)
+votes = roboting(num_robots*10,models)
 np.savez(f'rlt/dg1v3_{arg1}_{prd1}_{note}.npz',votes=votes)
-voting(votes,prop_votes,prop_robots,prop_score)
-
+voting(votes,prop_votes,prop_robots,hat_inv)
 
 ##########################################################################################
 #Backdat
