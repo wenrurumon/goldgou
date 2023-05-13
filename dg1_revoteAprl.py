@@ -1,59 +1,15 @@
-import pandas as pd
+
 import numpy as np
-import sys
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import os
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
-import datetime
-from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
-from scipy.stats import rankdata
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sklearn.model_selection import train_test_split
-import logging
-import datetime
+import torch
+import os 
 from collections import Counter
-import math
+device = torch.device("cpu")
 
-##########################################################################################
-#Parametering
-##########################################################################################
+printlog = print
 
-num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-prop_codes = 0.95
-w0 = [1,2,3,4,5]
-
-seeds = [101,777]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
-lr = 0.01
-early_tol = 1.1
-patience = 10
-patience2 = 5
-momentum = 0.99
-w = (w0/np.sum(w0)).reshape(5,1)
-
-def printlog(x):
-    print(datetime.datetime.now(), x)
-
-if torch.cuda.is_available():
-    printlog("GPU is available")
-    device = torch.device("cuda")
-else:
-    printlog("GPU is not available, using CPU instead")
-    device = torch.device("cpu")
-
-##########################################################################################
-#Modules
-##########################################################################################
-
-def processdata(arg1,prd1,seeds=seeds):
+def processdata(arg1,prd1,seeds):
     printlog(f'load data: data/raw{arg1}.csv')
     raw = pd.read_csv(f'data/raw{arg1}.csv')
     raw =  raw.drop_duplicates()
@@ -147,175 +103,46 @@ def processdata(arg1,prd1,seeds=seeds):
     profit = (closepvt/openpvt)[-5:,:]
     back = (lowpvt/openpvt)[-5:,:]
     life = life[-5:,:]/life[-6:-1]
-    return(datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes)
+    return(closepvt,openpvt,codes)
 
-class Autoencoder(nn.Module):
-    def __init__(self, X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg):
-        super(Autoencoder, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(X_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, latent_dim)
-        )
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim + Z_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, Y_dim)
-        )
-        self.predictor = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=dropout_rate),
-            nn.Linear(hidden_dim, Z_dim)
-        )
-        self.regularization = nn.ModuleList()
-        self.regularization.append(nn.Linear(hidden_dim, hidden_dim))
-        self.regularization.append(nn.Linear(latent_dim, latent_dim))
-        self.dropout_rate = dropout_rate
-        self.l2_reg = l2_reg
-    def forward(self, x):
-        k = self.encoder(x)
-        zhat = self.predictor(k)
-        concat = torch.cat((zhat, k), dim=1)
-        yhat = self.decoder(concat)
-        reg_loss = 0.0
-        for layer in self.regularization:
-            reg_loss += torch.norm(layer.weight)
-        reg_loss *= self.l2_reg
-        return yhat, zhat, reg_loss
+############################################################################################################
 
-def train(modeli, X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2, momentum):
-    X_train,Y_train,Z_train,X_test,Y_test,Z_test = datasets[modeli]
-    # Model 0
-    m = 0
-    train_dataset = TensorDataset(X_train, Y_train, Z_train)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    criterion = nn.MSELoss()
-    counter2 = 0
-    best_loss = np.inf
-    model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99)
-    # optimizer = optim.Adam(model.parameters(), lr=lr*0.1)
-    for epoch in range(num_epochs):
-        for xtr, ytr, ztr in train_loader:
-            xtr = xtr.float()
-            ytr = ytr.float()
-            yhat, zhat, l2_loss = model(xtr)
-            lossz = criterion(ztr, zhat)
-            lossy = criterion(ytr, yhat)
-            wz = .5*lossz / (.5*lossz+lossy)
-            wy = 1-wz
-            loss = wy*lossy + wz*lossz + l2_loss
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        with torch.no_grad():
-            yhate, zhate, l2_losse = model(X_test)
-            vlossz = criterion(Z_test, zhate)
-            vlossy = criterion(Y_test, yhate)
-            vloss = wy*vlossy + wz*vlossz + l2_losse
-        if epoch==0:
-            printlog(f'Model {modeli}.{m} start, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
-        if epoch>0:
-            if vloss < best_loss*early_tol:
-                if vloss < best_loss:
-                    best_loss = vloss
-                    best_model_state_dict = model.state_dict()
-                    counter = 0
-                else:
-                    counter += ((counter2+1)/10)
-            else:
-                counter += 1
-            if counter >= patience:
-                printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
-                X_train,Y_train,Z_train,X_test,Y_test,Z_test = X[-200:,:],Y[-200:,:],Z[-200:,:],X[-40:,:],Y[-40:,:],Z[-40:,:]
-                counter = 0
-                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.2
-                optimizer.param_groups[0]['momentum'] = optimizer.param_groups[0]['momentum'] * 0.9
-                counter2 += 1
-                model.load_state_dict(best_model_state_dict)
-            if counter2 > patience2:
-                model.load_state_dict(best_model_state_dict)
-                with torch.no_grad():
-                    yhate, zhate, l2_losse = model(X_test)
-                    vlossz = criterion(Z_test, zhate)
-                    vlossy = criterion(Y_test, yhate)
-                    vloss = wy*vlossy + wz*vlossz + l2_losse
-                break    
-    printlog(f"Model {modeli}.{m} stop, Epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
-    return(model)
-
-def voting(num_robots,prop_votes,prop_robots,prop_codes,w,models):
-    num_votes = int(len(codes)*prop_votes)
-    votes = []
-    for modeli in models:
-        for s in range(int(num_robots/len(models))):
-            torch.manual_seed(s)
-            Y2, Z2, _ = modeli(X2)
-            Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
-            votes.append(((-Z2).argsort(axis=1))[:,range(num_votes)])
+files = np.sort(os.listdir('rlt'))
+rlts = []
+for votefile in files:
+    prop_votes = 0.05
+    closepvt,openpvt,codes = processdata(votefile.split('_')[1],prd1=40,seeds=[1])
+    votes = np.load(f'rlt/{votefile}',allow_pickle=True)['votes']
+    # votes = votes[:,range(50),:,:]
+    votes = votes.reshape((np.prod(votes.shape[0:2]), 6, len(codes)))[:,:,range(int(prop_votes * len(codes)))]
     scores = []
-    for votei in votes:
+    for j in range(votes.shape[0]):
+        votei = votes[j]
+        today = closepvt[-5:,:]/openpvt[-5:,:]
+        overnite = openpvt[-5:,:]/closepvt[-6:-1,:]
+        overnite[0,:] = 1
         scorei = []
         for i in range(5):
-            scorei.append([np.mean(profit[i,votei[i]]),np.mean(life[i,votei[i]]),np.mean(back[i,votei[i]])])
+            scorei.append([np.mean(today[i,votei[i]]-1),np.mean(overnite[i,votei[i]]-1)])
         scorei = np.asarray(scorei)
-        scorei = np.append((scorei * w).sum(axis=0),np.min(scorei[:,2]))
-        scorei = np.append(scorei,(scorei[range(2)])/(scorei[2]))
+        scorei = np.concatenate((scorei,scorei.sum(axis=1,keepdims=True)),axis=1)
+        scorei = np.append(np.append(scorei.mean(axis=0),scorei.min(axis=0)),np.prod(scorei[:,2]+1)-1)
         scores.append(scorei)
-    scores = pd.DataFrame(np.asarray(scores))
-    scores.columns = ['profit','life','back','minback','avgprofit','avglife']
-    scores['pl'] = scores['profit'] * scores['back']
-    scores['apl'] = scores['avgprofit'] * scores['avglife']
-    scores = pd.DataFrame((-np.asarray(scores)).argsort(axis=0))
-    scores.columns = ['profit','life','back','minback','avgprofit','avglife','pl','apl']
-    scores = scores.head(int(num_robots*prop_robots))
-    votes2 = []
-    for i in range(scores.shape[0]):
-        votes2.append(codes[votes[scores['life'][i]][5]])
-    votes2 = np.ravel(votes2)
-    rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
-    rlt['codes'] = rlt.index
-    rlt['date'] = arg1
-    rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
-    rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],prop_codes)]
+    scores = np.asarray(scores)
+    scores = np.concatenate((scores,(scores[:,6,np.newaxis]+1)/(scores[:,5,np.newaxis]+1)),axis=1)
+    scores = pd.DataFrame(scores)
+    scores.columns = ['avgtoday','avgovernite','avgtotal','mintoday','minovernite','mintotal','accum','accumprisk']
+    score = np.ravel(scores['accumprisk'])
+    votes = votes[score>=np.quantile(score,0.95),5,:]
+    rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes)), orient='index', columns=['count']).sort_values('count',ascending=False)
+    rlt['codes'] = codes[rlt.index]
+    rlt['date'] = votefile.split('_')[1]
+    rlt['prop'] = rlt['count']/votes.shape[0]*0.1
+    rlt['cumprop'] = np.cumsum(rlt['prop'])
+    rlt = rlt[rlt['cumprop']<1]
     rlt['share'] = rlt['count']/sum(rlt['count'])
-    return(rlt)
-
-##########################################################################################
-#Revoting
-##########################################################################################
-
-logs = []
-for i in np.sort(os.listdir('log'))[1:22]:
-    logs.append(i.replace('.log','').split('_'))
-
-logs = np.asarray(logs)
-
-rlts = []
-for i in range(logs.shape[0]):
-    arg1 = int(logs[i,1])
-    prd1 = int(logs[i,2])
-    note = logs[i,3]
-    datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds=seeds)
-    X_dim = X.shape[1]
-    Y_dim = Y.shape[1]
-    Z_dim = Z.shape[1]
-    models = []
-    for i in range(len(datasets)):
-        modeli = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-        modeli.load_state_dict(torch.load(f'model/dg1_{arg1}_{prd1}_{note}_{i}.pt'))
-        models.append(modeli)
-    rlt = voting(num_robots,prop_votes,prop_robots,prop_codes,w,models)
+    rlt.iloc()[:,[0,1,2,5]]
     rlts.append(rlt)
 
 rlts = pd.concat(rlts,axis=0)
-rlts.to_csv(f'rlt/voting_l1wrbt.csv')
+rlts.to_csv('rlt/dg1_test.csv')
