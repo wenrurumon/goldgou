@@ -304,7 +304,6 @@ def voting(votes,prop_votes,prop_robots,w,hat_inv):
     rlt['share'] = rlt['count']/np.sum(rlt['count'])
     return(rlt)
 
-
 ##########################################################################################
 #Arguments
 ##########################################################################################
@@ -358,7 +357,6 @@ prop_robots = 0.1
 w = [1,2,3,4,5]
 hat_inv = 0.1
 
-
 #Process data
 
 datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(arg1,prd1,seeds)
@@ -378,8 +376,3 @@ np.savez(f'rlt/dg1v2_{arg1}_{prd1}_{note}.npz',votes=votes)
 trans = voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,hat_inv)
 printlog([seeds,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,prop_votes,prop_robots,w,hat_inv])
 printlog(trans)
-
-
-
-
-
