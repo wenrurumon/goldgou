@@ -308,12 +308,12 @@ def voting(votes,prop_votes,prop_robots,w,hat_inv):
 #Arguments
 ##########################################################################################
 
-# arg1 = '20230428'
-arg1 = int(sys.argv[1])
-# prd1 = 40
-prd1 = int(sys.argv[2])
-# note = 'test'
-note = datetime.datetime.now().strftime("%y%m%d%H%M")
+arg1 = '20230428'
+# arg1 = int(sys.argv[1])
+prd1 = 40
+# prd1 = int(sys.argv[2])
+note = 'test'
+# note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
 if(note=='test'):
   def printlog(x):
@@ -376,3 +376,12 @@ np.savez(f'rlt/dg1v2_{arg1}_{prd1}_{note}.npz',votes=votes)
 trans = voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,hat_inv)
 printlog([seeds,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,prop_votes,prop_robots,w,hat_inv])
 printlog(trans)
+
+#Validate
+
+# rltfile = 'dg1v2_20230516_40_2305151046.npz'
+# method,arg1,prd1,note = rltfile.split('.')[0].split('_')
+# datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),int(prd1),[1])
+# votes = np.load(f'rlt/{rltfile}',allow_pickle=True)['votes']
+# voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,0.03)
+
