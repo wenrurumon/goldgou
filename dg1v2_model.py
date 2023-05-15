@@ -308,12 +308,12 @@ def voting(votes,prop_votes,prop_robots,w,hat_inv):
 #Arguments
 ##########################################################################################
 
-arg1 = '20230428'
-# arg1 = int(sys.argv[1])
-prd1 = 40
-# prd1 = int(sys.argv[2])
-note = 'test'
-# note = datetime.datetime.now().strftime("%y%m%d%H%M")
+# arg1 = '20230428'
+arg1 = int(sys.argv[1])
+# prd1 = 40
+prd1 = int(sys.argv[2])
+# note = 'test'
+note = datetime.datetime.now().strftime("%y%m%d%H%M")
 
 if(note=='test'):
   def printlog(x):
@@ -385,3 +385,16 @@ printlog(trans)
 # votes = np.load(f'rlt/{rltfile}',allow_pickle=True)['votes']
 # voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,0.03)
 
+#Rolling
+
+import os
+import numpy as np
+files = []
+for i in np.sort(os.listdir('data')):
+    if 'raw' in i:
+        files.append(i.replace('raw','').replace('.csv',''))
+
+for arg1 in files:
+    syntax = f'python dg1v2_model.py {arg1} 40'
+    print(syntax)
+    os.system(syntax)
