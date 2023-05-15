@@ -251,7 +251,7 @@ def voting1(votes,prop_votes,prop_robots,hat_inv):
         scores.append(scorei)
     scores = pd.DataFrame(np.asarray(scores))
     scores.columns = ['profit','life','back']
-    score = np.ravel(scores['life'])
+    score = np.ravel(scores['life'])# * np.ravel(scores['profit'])
     votes = votes[score>=np.quantile(score,1-prop_robots),5,:]
     rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes)), orient='index', columns=['count']).sort_values('count',ascending=False)
     rlt['codes'] = codes[rlt.index]
@@ -327,7 +327,6 @@ if torch.cuda.is_available():
 else:
     printlog("GPU is not available, using CPU instead")
     device = torch.device("cpu")
-
 
 ##########################################################################################
 #Modeling
@@ -409,7 +408,7 @@ for filei in files:
     arg1 = filei.split('_')[1]
     print(arg1)
     datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(arg1,10,seeds=[1])
-    votei = np.load(f'rlt/{filei}')['votes']#[range(10),:,:,:]
+    votei = np.load(f'rlt/{filei}')['votes'][:,:,:,:]
     rlti = votemodel(votei,prop_votes,prop_robots,hat_inv)
     rlti['robot'] = model
     rlti['vote'] = vote
@@ -447,4 +446,6 @@ rlt = pd.merge(
 )
 rlt['profit'] = rlt.today * rlt.overnite
 rlt['cumprofit'] = np.cumprod(rlt.profit)
+
+[model,prop_votes,prop_robots,hat_inv,vote]
 rlt
