@@ -377,13 +377,62 @@ trans = voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,hat_inv)
 printlog([seeds,hidden_dim,latent_dim,dropout_rate,l2_reg,lr,early_tol,patience,patience2,momentum,prop_votes,prop_robots,w,hat_inv])
 printlog(trans)
 
+##########################################################################################
+#Validation
+##########################################################################################
+
 #Validate
 
-# rltfile = 'dg1v2_20230516_40_2305151046.npz'
-# method,arg1,prd1,note = rltfile.split('.')[0].split('_')
-# datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),int(prd1),[1])
-# votes = np.load(f'rlt/{rltfile}',allow_pickle=True)['votes']
-# voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,0.03)
+device = torch.device("cpu")
+prop_votes = 0.05
+prop_robots = 0.1
+hat_inv = 0.1
+w = [1,2,3,4,5]
+
+rlts = []
+rltfiles = np.sort(os.listdir('rlt'))
+for rltfile in rltfiles:
+    if 'dg1v2_' in rltfile:
+        method,arg1,prd1,note = rltfile.split('.')[0].split('_')
+        print(arg1)
+        datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),int(prd1),[1])
+        votes = np.load(f'rlt/{rltfile}',allow_pickle=True)['votes']
+        rlt = voting(votes[:,range(50),:,:],prop_votes,prop_robots,w,hat_inv)
+        rlts.append(rlt)
+
+trans = pd.concat(rlts,axis=0)
+
+ref = []
+for i in np.unique(trans.codes.tolist()):
+    codei = str(i+1000000)[-6:]
+    refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=min(trans.date), end_date=max(trans.date), adjust="")
+    refi = refi.iloc()[:,range(3)]
+    refi.columns = ['date','open','close']
+    refi['codes'] = i
+    ref.append(refi)
+
+ref = pd.concat(ref,axis=0)
+ref['date'] = pd.to_datetime(ref['date']).dt.strftime('%Y%m%d')
+ref['did'] = ref['date'].rank(method='dense').astype(int)
+
+trans = pd.merge(trans,ref,on=['date','codes'])
+trans['did'] = trans['date'].rank(method='dense').astype(int)+1
+trans = pd.merge(trans,ref.loc[:,['did','codes','open']].rename(columns={'open':'open1'}),on=['did','codes'],how='left')
+trans = trans.loc[:,['codes','date','share','open','close','open1']]
+trans['open1'] = np.where(trans['open1'].isna(), trans['close'], trans['open1'])
+
+rlt = pd.merge(
+    trans.groupby('date').apply(lambda x:(x['close']/x['open']*x['share']).sum()).reset_index(name='today')[['date', 'today']],
+    trans.groupby('date').apply(lambda x:(x['open1']/x['close']*x['share']).sum()).reset_index(name='overnite')[['date', 'overnite']]
+)
+rlt['profit'] = rlt.today * rlt.overnite
+rlt['cumprofit'] = np.cumprod(rlt.profit)
+[prop_votes,prop_robots,hat_inv]
+rlt
+
+##########################################################################################
+#Rolling
+##########################################################################################
 
 #Rolling
 
