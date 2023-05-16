@@ -36,7 +36,7 @@ else:
     logging.basicConfig(
         level=logging.DEBUG, 
         format='%(asctime)s %(message)s', 
-        filename=f'log/dg1v2_{arg1}_{note}.log',  
+        filename=f'log/dg1v1_{arg1}_{note}.log',  
         filemode='a'  
     )
     printlog = logging.debug
@@ -435,7 +435,7 @@ rlt = rlt[np.cumsum(rlt['idx'])<1]
 # rlt = rlt[rlt['idx']>1]
 rlt['share'] = rlt['count']/sum(rlt['count'])
 printlog(rlt)
-np.savez(f'rlt/dg1v2_{arg1}_{prd1}_{note}.npz',votes=allvotes)
+np.savez(f'rlt/dg1v1_{arg1}_{prd1}_{note}.npz',votes=allvotes)
 
 #Validate
 
