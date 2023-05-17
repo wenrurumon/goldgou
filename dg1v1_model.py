@@ -392,7 +392,7 @@ else:
 ############################################################################################################
 
 #Data Processing
-datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(arg1,prd1,seeds)
+datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(arg1,prd1,seeds)
 
 #Modeling
 X_dim = X.shape[1]
@@ -412,19 +412,19 @@ np.savez(f'rlt/dg1v1_{arg1}_{prd1}_{note}.npz',votes=votes)
 #     trans
 #     printlog(validtrans(trans,date0,date1))
 
-trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
-date0,date1 = checkcalendar(arg1)
-printlog(trans)
-printlog(validtrans(trans,date0,date1))
+# trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
+# date0,date1 = checkcalendar(arg1)
+# printlog(trans)
+# printlog(validtrans(trans,date0,date1))
 
-trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
-date0,date1 = checkcalendar(arg1)
+trans = voting(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv,w)
+# date0,date1 = checkcalendar(arg1)
 printlog(trans)
-printlog(validtrans(trans,date0,date1))
+# printlog(validtrans(trans,date0,date1))
 
-##########################################################################################
-#Rolling
-##########################################################################################
+# ##########################################################################################
+# #Rolling
+# ##########################################################################################
 
 # #Rolling
 
@@ -440,7 +440,9 @@ printlog(validtrans(trans,date0,date1))
 #     print(syntax)
 #     os.system(syntax)
 
+# ##########################################################################################
 # #Validation
+# ##########################################################################################
 
 # import os
 # import numpy as np
@@ -459,9 +461,9 @@ printlog(validtrans(trans,date0,date1))
 #     if ('dg1v1_202305' in i):
 #         print(i)
 #         arg1 = i.split('_')[1]
-#         datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(int(arg1),10,[1])
+#         datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),10,[1])
 #         votei = np.load(f'rlt/{i}')['votes']
-#         robots.append([arg1,codes,votei])
+#         robots.append([arg1,codes,votei,life,profit,back,closepvt,openpvt])
 
 # outs = []
 # transfinal = []
@@ -469,10 +471,56 @@ printlog(validtrans(trans,date0,date1))
 #     arg1 = int(robots[i][0])
 #     codes = robots[i][1]
 #     votes = robots[i][2]
+#     life = robots[i][3]
+#     profit = robots[i][4]
+#     back = robots[i][5]
+#     closepvt = robots[i][6]
+#     openpvt = robots[i][7]
+#     date0,date1 = checkcalendar(arg1)
+#     outi = []
+#     trans = voting(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv,w)
+#     transfinal.append(trans)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     trans = voting(votes[:,range(50),:,:],prop_votes,prop_robots,hat_inv,w)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     trans = voting2(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     trans = voting2(votes[:,range(50),:,:],prop_votes,prop_robots,hat_inv)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     outs.append(np.append(arg1,outi))
+
+# outs = np.asarray(outs)
+# pd.DataFrame(outs.prod(axis=0))
+
+# rlts = []
+# for i in range(len(transfinal)):
+#     date0,date1 = checkcalendar(min(transfinal[i].date))
+#     rlts.append(validtrans(transfinal[i],date0,date1))
+
+# pd.concat(rlts,axis=0)
+# np.prod(pd.concat(rlts,axis=0)['profit'])
+
+# #####################################
+
+# outs = []
+# transfinal = []
+# for i in range(len(robots)):
+#     arg1 = int(robots[i][0])
+#     codes = robots[i][1]
+#     votes = robots[i][2]
+#     life = robots[i][3]
+#     profit = robots[i][4]
+#     back = robots[i][5]
+#     closepvt = robots[i][6]
+#     openpvt = robots[i][7]
 #     outi = []
 #     transnew = []
-#     for i in range(4):
-#         trans = voting(votes[(0+i*5):(5+i*5),:,:,:],prop_votes,prop_robots,hat_inv,w)
+#     for j in range(4):
+#         trans = voting(votes[(0+j*5):(5+j*5),:,:,:],prop_votes,prop_robots,hat_inv,w)
 #         transnew.append(trans)
 #         date0,date1 = checkcalendar(arg1)
 #         printlog(validtrans(trans,date0,date1))
@@ -480,18 +528,27 @@ printlog(validtrans(trans,date0,date1))
 #     transnew = pd.concat(transnew,axis=0).groupby(['date', 'codes'])['count'].sum().reset_index(name='count')
 #     transnew['share'] = transnew['count']/np.sum(transnew['count'])
 #     printlog(validtrans(transnew,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     outi.append(np.ravel(validtrans(transnew,date0,date1)['profit']).tolist())
 #     trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
 #     printlog(validtrans(trans,date0,date1))
 #     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
 #     transfinal.append(trans)
-#     outs.append(np.ravel(np.append(arg1,outi)))
+#     outs.append(np.append(arg1,outi))
 
 # outs = np.asarray(outs)
+# pd.DataFrame(outs.prod(axis=0))
+
 # rlts = []
 # for i in range(len(transfinal)):
 #     date0,date1 = checkcalendar(min(transfinal[i].date))
 #     rlts.append(validtrans(transfinal[i],date0,date1))
 
-# pd.concat(transfinal,axis=0).to_csv('rlt/testback0517.csv')
+# trans = pd.concat(transfinal,axis=0)
+
+# # # pd.concat(transfinal,axis=0).to_csv('rlt/testback0517.csv')
+# pd.concat(rlts,axis=0)
 # np.prod(pd.concat(rlts,axis=0)['profit'])
+
