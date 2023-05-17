@@ -116,7 +116,7 @@ def processdata(arg1,prd1,seeds):
     profit = (closepvt/openpvt)[-5:,:]
     back = (lowpvt/openpvt)[-5:,:]
     life = life[-5:,:]/life[-6:-1]
-    return(datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes)
+    return(datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt)
 
 class Autoencoder(nn.Module):
     def __init__(self, X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg):
@@ -277,11 +277,41 @@ def voting(votes,prop_votes,prop_robots,hat_inv,w):
     # rlt['share'] = rlt['count']/sum(rlt['count'])
     # return(rlt)
 
+def voting2(votes,prop_votes,prop_robots,hat_inv):
+    votes = votes.reshape((np.prod(votes.shape[0:2]), 6, len(codes)))[:,:,range(int(prop_votes * len(codes)))]
+    scores = []
+    for j in range(votes.shape[0]):
+        votei = votes[j]
+        today = closepvt[-5:,:]/openpvt[-5:,:]
+        overnite = openpvt[-5:,:]/closepvt[-6:-1,:]
+        overnite[0,:] = 1
+        scorei = []
+        for i in range(5):
+            scorei.append([np.mean(today[i,votei[i]]-1),np.mean(overnite[i,votei[i]]-1)])
+        scorei = np.asarray(scorei)
+        scorei = np.concatenate((scorei,scorei.sum(axis=1,keepdims=True)),axis=1)
+        scorei = np.append(np.append(scorei.mean(axis=0),scorei.min(axis=0)),np.prod(scorei[:,2]+1)-1)
+        scores.append(scorei)
+    scores = np.asarray(scores)
+    scores = np.concatenate((scores,(scores[:,6,np.newaxis]+1)/(scores[:,5,np.newaxis]+1)),axis=1)
+    scores = pd.DataFrame(scores)
+    scores.columns = ['avgtoday','avgovernite','avgtotal','mintoday','minovernite','mintotal','accum','accumprisk']
+    score = np.ravel(scores['accumprisk'])
+    votes = votes[score>=np.quantile(score,1-prop_robots),5,:]
+    rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes)), orient='index', columns=['count']).sort_values('count',ascending=False)
+    rlt['codes'] = codes[rlt.index]
+    rlt['date'] = arg1
+    rlt['prop'] = rlt['count']/votes.shape[0]*hat_inv
+    rlt['cumprop'] = np.cumsum(rlt['prop'])
+    rlt = rlt[rlt['cumprop']<1]
+    rlt['share'] = rlt['count']/sum(rlt['count'])
+    return(rlt.iloc()[:,[0,1,2,5]])
+
 def validtrans(trans,date0,date1):
     ref = []
     for i in np.unique(trans.codes.tolist()):
         codei = str(i+1000000)[-6:]
-        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date0, end_date=date1, adjust="")
+        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date0, end_date=date1, adjust="qfq")
         refi = refi.iloc()[:,range(3)]
         refi.columns = ['date','open','close']
         refi['codes'] = i
