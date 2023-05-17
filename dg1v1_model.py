@@ -376,13 +376,18 @@ for i in range(len(datasets)):
 #Summary
 votes = roboting(10000,models)
 np.savez(f'rlt/dg1v1_{arg1}_{prd1}_{note}.npz',votes=votes)
-for i in range(4):
-    trans = voting(votes[(0+i*5):(5+i*5),range(200),:,:],prop_votes,prop_robots,hat_inv,w)
-    date0,date1 = checkcalendar(arg1)
-    trans
-    printlog(validtrans(trans,date0,date1))
+# for i in range(4):
+#     trans = voting(votes[(0+i*5):(5+i*5),range(200),:,:],prop_votes,prop_robots,hat_inv,w)
+#     date0,date1 = checkcalendar(arg1)
+#     trans
+#     printlog(validtrans(trans,date0,date1))
 
-trans = voting(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv,w)
+trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
+date0,date1 = checkcalendar(arg1)
+printlog(trans)
+printlog(validtrans(trans,date0,date1))
+
+trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
 date0,date1 = checkcalendar(arg1)
 printlog(trans)
 printlog(validtrans(trans,date0,date1))
@@ -391,17 +396,72 @@ printlog(validtrans(trans,date0,date1))
 #Rolling
 ##########################################################################################
 
-#Rolling
+# #Rolling
 
-import os
-import numpy as np
-files = []
-for i in np.sort(os.listdir('data')):
-    if 'raw' in i:
-        files.append(i.replace('raw','').replace('.csv',''))
+# import os
+# import numpy as np
+# files = []
+# for i in np.sort(os.listdir('data')):
+#     if 'raw' in i:
+#         files.append(i.replace('raw','').replace('.csv',''))
 
-for arg1 in files[21:]:
-    syntax = f'python dg1v1_model.py {arg1} 40'
-    print(syntax)
-    os.system(syntax)
+# for arg1 in files[:21]:
+#     syntax = f'python dg1v1_model.py {arg1} 40'
+#     print(syntax)
+#     os.system(syntax)
 
+# #Validation
+
+# import os
+# import numpy as np
+# device = torch.device("cpu")
+# printlog = print
+
+# num_robots = 1000
+# prop_votes = 0.05
+# prop_robots = 0.1
+# hat_inv = 0.1
+# w0 = [1,2,3,4,5]
+# w = (w0/np.sum(w0)).reshape(5,1)
+
+# robots = []
+# for i in np.sort(os.listdir('rlt')):
+#     if ('dg1v1_202305' in i):
+#         print(i)
+#         arg1 = i.split('_')[1]
+#         datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes = processdata(int(arg1),10,[1])
+#         votei = np.load(f'rlt/{i}')['votes']
+#         robots.append([arg1,codes,votei])
+
+# outs = []
+# transfinal = []
+# for i in range(len(robots)):
+#     arg1 = int(robots[i][0])
+#     codes = robots[i][1]
+#     votes = robots[i][2]
+#     outi = []
+#     transnew = []
+#     for i in range(4):
+#         trans = voting(votes[(0+i*5):(5+i*5),:,:,:],prop_votes,prop_robots,hat_inv,w)
+#         transnew.append(trans)
+#         date0,date1 = checkcalendar(arg1)
+#         printlog(validtrans(trans,date0,date1))
+#         outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     transnew = pd.concat(transnew,axis=0).groupby(['date', 'codes'])['count'].sum().reset_index(name='count')
+#     transnew['share'] = transnew['count']/np.sum(transnew['count'])
+#     printlog(validtrans(transnew,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
+#     printlog(validtrans(trans,date0,date1))
+#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
+#     transfinal.append(trans)
+#     outs.append(np.ravel(np.append(arg1,outi)))
+
+# outs = np.asarray(outs)
+# rlts = []
+# for i in range(len(transfinal)):
+#     date0,date1 = checkcalendar(min(transfinal[i].date))
+#     rlts.append(validtrans(transfinal[i],date0,date1))
+
+# pd.concat(transfinal,axis=0).to_csv('rlt/testback0517.csv')
+# np.prod(pd.concat(rlts,axis=0)['profit'])
