@@ -268,12 +268,13 @@ def voting(votes,prop_votes,prop_robots,hat_inv,w):
     rlt['date'] = arg1
     #voting hat
     rlt['share'] = rlt['count']/num_robots/prop_robots*hat_inv
-    rlt = rlt[np.cumsum(rlt['share'])<1]
-    rlt['share'] = rlt['share']/np.sum(rlt['share'])
+    rlt = rlt[np.cumsum(rlt['share'])<1.2]
+    rlt['share'] = rlt['share']/np.sum(rlt['share'])*1.2
     return(rlt)
     #voting quantile
     # rlt['idx'] = rlt['count']/(num_robots)/(num_votes/len(codes))
-    # rlt = rlt[rlt['idx']>=np.quantile(rlt['idx'],1-hat_inv/2)]
+    # rlt = rlt[rlt['idx']>np.quantile(rlt['idx'],1-hat_inv/2)]
+    # rlt = rlt[rlt['idx']>1]
     # rlt['share'] = rlt['count']/sum(rlt['count'])
     # return(rlt)
 
@@ -303,11 +304,12 @@ def voting2(votes,prop_votes,prop_robots,hat_inv):
     rlt['date'] = arg1
     rlt['prop'] = rlt['count']/votes.shape[0]*hat_inv
     rlt['cumprop'] = np.cumsum(rlt['prop'])
-    rlt = rlt[rlt['cumprop']<1]
-    rlt['share'] = rlt['count']/sum(rlt['count'])
+    rlt = rlt[rlt['cumprop']<1.2]
+    rlt['share'] = rlt['count']/sum(rlt['count'])*1.2
     return(rlt.iloc()[:,[0,1,2,5]])
 
 def validtrans(trans,date0,date1):
+    trans['share'] = trans['share'] / np.sum(trans['share'])
     ref = []
     for i in np.unique(trans.codes.tolist()):
         codei = str(i+1000000)[-6:]
@@ -337,6 +339,10 @@ def checkcalendar(date0):
             calendar.append(int(i.replace('raw','').replace('.csv','')))
     i = (np.asarray(calendar)!=date0).argsort()[0]
     return(calendar[i],calendar[i+1])
+
+def getstockname(codei):
+    codei = str(codei+1000000)[-6:]
+    return(ak.stock_individual_info_em(symbol=codei)['value'][5])
 
 ##########################################################################################
 #Parametering
@@ -412,143 +418,95 @@ np.savez(f'rlt/dg1v1_{arg1}_{prd1}_{note}.npz',votes=votes)
 #     trans
 #     printlog(validtrans(trans,date0,date1))
 
-# trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
-# date0,date1 = checkcalendar(arg1)
-# printlog(trans)
-# printlog(validtrans(trans,date0,date1))
-
-trans = voting(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv,w)
-# date0,date1 = checkcalendar(arg1)
+trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
+date0,date1 = checkcalendar(arg1)
 printlog(trans)
-# printlog(validtrans(trans,date0,date1))
+printlog(validtrans(trans,date0,date1))
 
-# ##########################################################################################
-# #Rolling
-# ##########################################################################################
+trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
+date0,date1 = checkcalendar(arg1)
+printlog(trans)
+printlog(validtrans(trans,date0,date1))
 
-# #Rolling
+##########################################################################################
+#Rolling
+##########################################################################################
 
-# import os
-# import numpy as np
-# files = []
-# for i in np.sort(os.listdir('data')):
-#     if 'raw' in i:
-#         files.append(i.replace('raw','').replace('.csv',''))
+#Rolling
 
-# for arg1 in files[:21]:
-#     syntax = f'python dg1v1_model.py {arg1} 40'
-#     print(syntax)
-#     os.system(syntax)
+import os
+import numpy as np
+files = []
+for i in np.sort(os.listdir('data')):
+    if 'raw' in i:
+        files.append(i.replace('raw','').replace('.csv',''))
 
-# ##########################################################################################
-# #Validation
-# ##########################################################################################
+for arg1 in files[:21]:
+    syntax = f'python dg1v1_model.py {arg1} 40'
+    print(syntax)
+    os.system(syntax)
 
-# import os
-# import numpy as np
-# device = torch.device("cpu")
-# printlog = print
+##########################################################################################
+#Validation
+##########################################################################################
 
-# num_robots = 1000
-# prop_votes = 0.05
-# prop_robots = 0.1
-# hat_inv = 0.1
-# w0 = [1,2,3,4,5]
-# w = (w0/np.sum(w0)).reshape(5,1)
+import os
+import numpy as np
+device = torch.device("cpu")
+printlog = print
 
-# robots = []
-# for i in np.sort(os.listdir('rlt')):
-#     if ('dg1v1_202305' in i):
-#         print(i)
-#         arg1 = i.split('_')[1]
-#         datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),10,[1])
-#         votei = np.load(f'rlt/{i}')['votes']
-#         robots.append([arg1,codes,votei,life,profit,back,closepvt,openpvt])
+num_robots = 1000
+prop_votes = 0.05
+prop_robots = 0.1
+hat_inv = 0.1
+w0 = [1,2,3,4,5]
+w = (w0/np.sum(w0)).reshape(5,1)
 
-# outs = []
-# transfinal = []
-# for i in range(len(robots)):
-#     arg1 = int(robots[i][0])
-#     codes = robots[i][1]
-#     votes = robots[i][2]
-#     life = robots[i][3]
-#     profit = robots[i][4]
-#     back = robots[i][5]
-#     closepvt = robots[i][6]
-#     openpvt = robots[i][7]
-#     date0,date1 = checkcalendar(arg1)
-#     outi = []
-#     trans = voting(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv,w)
-#     transfinal.append(trans)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     trans = voting(votes[:,range(50),:,:],prop_votes,prop_robots,hat_inv,w)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     trans = voting2(votes[5:15,range(100),:,:],prop_votes,prop_robots,hat_inv)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     trans = voting2(votes[:,range(50),:,:],prop_votes,prop_robots,hat_inv)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     outs.append(np.append(arg1,outi))
+robots = []
+for i in np.sort(os.listdir('rlt')):
+    if ('dg1v1_' in i):
+        print(i)
+        arg1 = i.split('_')[1]
+        datasets,life,profit,back,X,Y,Z,X2,Zscaler,codes,closepvt,openpvt = processdata(int(arg1),40,[1])
+        votei = np.load(f'rlt/{i}')['votes']
+        robots.append([arg1,codes,votei,life,profit,back,closepvt,openpvt])
 
-# outs = np.asarray(outs)
-# pd.DataFrame(outs.prod(axis=0))
+trans = []
+for i in range(len(robots)):
+    arg1 = int(robots[i][0])
+    codes = robots[i][1]
+    votes = robots[i][2]
+    life = robots[i][3]
+    profit = robots[i][4]
+    back = robots[i][5]
+    closepvt = robots[i][6]
+    openpvt = robots[i][7]
+    transi=voting(votes[:,range(50),:,:],prop_votes,prop_robots,hat_inv,w)
+    trans.append(transi[np.cumsum(transi.share)<=2])
 
-# rlts = []
-# for i in range(len(transfinal)):
-#     date0,date1 = checkcalendar(min(transfinal[i].date))
-#     rlts.append(validtrans(transfinal[i],date0,date1))
+trans2 = trans
+# trans2 = [trans[0].iloc()[:,1:]]
+# for i in range(1,len(trans)):
+#     trans2.append(pd.concat((trans[i-1],trans[i]),axis=0).groupby('codes').agg({'share': 'sum'}).reset_index())
+#     trans2[i]['date'] = max(trans[i]['date'])
+#     trans2[i]['share'] = trans2[i]['share'] /np.sum(trans2[i]['share'] )
 
-# pd.concat(rlts,axis=0)
-# np.prod(pd.concat(rlts,axis=0)['profit'])
+rlts = []
+for i in range(len(trans2)-1):
+    date0,date1 = checkcalendar(min(trans2[i].date))
+    rlts.append(validtrans(trans2[i],date0,date1))
 
-# #####################################
+rlts = pd.concat(rlts,axis=0)
+np.prod(rlts['profit'])
+rlts['cumprofit'] = np.cumprod(rlts['profit'])
+rlts
 
-# outs = []
-# transfinal = []
-# for i in range(len(robots)):
-#     arg1 = int(robots[i][0])
-#     codes = robots[i][1]
-#     votes = robots[i][2]
-#     life = robots[i][3]
-#     profit = robots[i][4]
-#     back = robots[i][5]
-#     closepvt = robots[i][6]
-#     openpvt = robots[i][7]
-#     outi = []
-#     transnew = []
-#     for j in range(4):
-#         trans = voting(votes[(0+j*5):(5+j*5),:,:,:],prop_votes,prop_robots,hat_inv,w)
-#         transnew.append(trans)
-#         date0,date1 = checkcalendar(arg1)
-#         printlog(validtrans(trans,date0,date1))
-#         outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     transnew = pd.concat(transnew,axis=0).groupby(['date', 'codes'])['count'].sum().reset_index(name='count')
-#     transnew['share'] = transnew['count']/np.sum(transnew['count'])
-#     printlog(validtrans(transnew,date0,date1))
-#     outi.append(np.ravel(validtrans(transnew,date0,date1)['profit']).tolist())
-#     trans = voting(votes[5:15,:,:,:],prop_votes,prop_robots,hat_inv,w)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     trans = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv,w)
-#     printlog(validtrans(trans,date0,date1))
-#     outi.append(np.ravel(validtrans(trans,date0,date1)['profit']).tolist())
-#     transfinal.append(trans)
-#     outs.append(np.append(arg1,outi))
+# pd.concat(transfinal,axis=0).to_csv('rlt/testback0518.csv')
+out = trans2[len(trans2)-1]
+stocks = []
+for i in range(out.shape[0]):
+    stocks.append(getstockname(np.ravel(out['codes'])[i]))
 
-# outs = np.asarray(outs)
-# pd.DataFrame(outs.prod(axis=0))
-
-# rlts = []
-# for i in range(len(transfinal)):
-#     date0,date1 = checkcalendar(min(transfinal[i].date))
-#     rlts.append(validtrans(transfinal[i],date0,date1))
-
-# trans = pd.concat(transfinal,axis=0)
-
-# # # pd.concat(transfinal,axis=0).to_csv('rlt/testback0517.csv')
-# pd.concat(rlts,axis=0)
-# np.prod(pd.concat(rlts,axis=0)['profit'])
+out['stock'] = np.ravel(stocks)
+out
 
