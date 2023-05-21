@@ -321,7 +321,7 @@ rawsel = pd.DataFrame({
 'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
 }).set_index('code')
 rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-rawsel = rawsel[(rawsel.closegr > np.quantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.quantile(rawsel.lifegr,0.5))]
+rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
 rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
 raw = raw[raw['code'].isin(rawsel.code)]
 
@@ -346,7 +346,7 @@ pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
 
 #Rolling
 
-for rawi in range(4,len(codelist)):
+for rawi in range(19,len(codelist)):
     vote0 = np.load(f'rlt/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
     rlt0 = voting(vote0['votes'],prop_votes,prop_robots,hat_inv/10)
     newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0.index.tolist()))
@@ -360,7 +360,7 @@ for rawi in range(4,len(codelist)):
     'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
     }).set_index('code')
     rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-    rawsel = rawsel[(rawsel.closegr > np.quantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.quantile(rawsel.lifegr,0.5))]
+    rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
     rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
     raw = raw[raw['code'].isin(rawsel.code)]
     date0 = codelist[rawi-1][0]
