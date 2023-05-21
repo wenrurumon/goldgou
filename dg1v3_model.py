@@ -271,7 +271,7 @@ def voting(votes,prop_votes,prop_robots,hat_inv):
         scorei = np.asarray(scorei)
         scores.append(np.concatenate([scorei.mean(axis=0),scorei.min(axis=0),scorei.prod(axis=0)],axis=0))
     scores = np.asarray(scores)
-    robots = (-scores[:,8]).argsort()
+    robots = (-(scores[:,8]*scores[:,5])).argsort()
     robots = robots[range(int(num_robots*prop_robots))]
     votes2 = np.ravel(votes[robots,5,:])
     rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
@@ -346,7 +346,7 @@ pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
 
 #Rolling
 
-for rawi in range(19,len(codelist)):
+for rawi in range(3,len(codelist)):
     vote0 = np.load(f'rlt/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
     rlt0 = voting(vote0['votes'],prop_votes,prop_robots,hat_inv/10)
     newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0.index.tolist()))
@@ -375,6 +375,7 @@ for rawi in range(19,len(codelist)):
 #Resulting
 
 rlts1 = []
+trans = []
 rltfiles = np.sort(os.listdir('rlt'))
 print(rltfiles)
 for i in rltfiles:
@@ -389,6 +390,9 @@ for i in rltfiles:
         rlt = pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
         rlt['date'] = i.split('.')[0].replace('vote','')
         rlts1.append(rlt)
+        transi = voting(votes[:,:,:,:],prop_votes,prop_robots,0.0001)
+        transi['date'] = i.split('.')[0].replace('vote','')
+        trans.append(transi)
 
 rlts2 = []
 for i in range(1,len(rlts1)):
