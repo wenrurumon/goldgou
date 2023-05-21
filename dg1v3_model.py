@@ -226,8 +226,8 @@ def train(modeli, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, p
                 counter += 1
             if counter >= patience:
                 counter2 += 1
-                if counter2 == 1:
-                    printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+                # if counter2 == 1:
+                    # printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
                 counter = 0
                 optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
                 model.load_state_dict(best_model_state_dict)
@@ -385,7 +385,7 @@ for i in rltfiles:
         raw = pd.DataFrame(rlti['raw'])
         raw.columns = ['date','open','close','high','low','val','code']
         datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[1])
-        rlt = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv*1)
+        rlt = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv)
         rlt = pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
         rlt['date'] = i.split('.')[0].replace('vote','')
         rlts1.append(rlt)
@@ -414,6 +414,8 @@ todaypvt = np.asarray(closepvt)/np.asarray(openpvt)
 tonitepvt = np.asarray(openpvt[1:])/np.asarray(openpvt.iloc()[range(openpvt.shape[0]-1),:])
 tonitepvt = np.concatenate((tonitepvt,np.asarray([1]*tonitepvt.shape[1]).reshape(1,tonitepvt.shape[1])),axis=0)
 transpvt = np.asarray(rltspvt)
+tonitepvt[np.isnan(tonitepvt)] = 1
+todaypvt[np.isnan(todaypvt)] = 1
 
 rlt = pd.DataFrame({
     'date':rltspvt.index,
@@ -423,3 +425,4 @@ rlt = pd.DataFrame({
 })
 rlt['accum'] = np.cumprod(rlt['profit'])
 print(rlt)
+
