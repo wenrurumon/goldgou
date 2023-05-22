@@ -18,8 +18,6 @@ from collections import Counter
 import math
 import akshare as ak
 
-##########################################################################################
-
 def printlog(x):
     print(datetime.datetime.now(), x)
 
@@ -254,38 +252,7 @@ def roboting(num_robots,models):
         votes.append(np.asarray(votei))
     return(np.asarray(votes))
 
-def voting(votes,prop_votes,prop_robots,hat_inv):
-    votes = votes.reshape((np.prod(votes.shape[0:2]),6,raws['close'].shape[1]))[:,:,range(int(prop_votes*raws['close'].shape[1]))]
-    today = np.asarray(raws['close'].iloc()[-5:,:])/np.asarray(raws['open'].iloc()[-5:,:])
-    tonite = (np.asarray(raws['open'].iloc()[1:,:])/np.asarray(raws['close'].iloc()[range(raws['close'].shape[0]-1),:]))[-4:,:]
-    tonite = np.concatenate((tonite,np.asarray([1]*tonite.shape[1]).reshape(1,tonite.shape[1])),axis=0)
-    scores = []
-    for i in range(votes.shape[0]):
-        votei = votes[i]
-        scorei = []
-        for i in range(5):
-            todayi = np.mean(today[i,votei[i]])
-            tonitei = np.mean(tonite[i,votei[i]])
-            profiti = todayi*tonitei
-            scorei.append([todayi,tonitei,profiti])
-        scorei = np.asarray(scorei)
-        scores.append(np.concatenate([scorei.mean(axis=0),scorei.min(axis=0),scorei.prod(axis=0)],axis=0))
-    scores = np.asarray(scores)
-    robots = (-(scores[:,8])).argsort()
-    robots = robots[range(int(num_robots*prop_robots))]
-    votes2 = np.ravel(votes[robots,5,:])
-    rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
-    rlt['code'] = raws['close'].columns[rlt.index]
-    rlt['index'] = rlt['count']/(len(votes2)/today.shape[1])
-    rlt = rlt[rlt['count']>=(len(votes2)/today.shape[1]*hat_inv)]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])*1
-    # rlt['share'] = rlt['count']/num_robots/prop_robots*hat_inv
-    # rlt = rlt[np.cumsum(rlt['share'])<1]
-    # rlt['share'] = rlt['share']/np.sum(rlt['share'])*1
-    rlt = rlt.set_index('code')
-    return(rlt)
-
-def voting2(votes,prop_votes,prop_robots):
+def voting(votes,prop_votes,prop_robots):
     rlts = []
     for i in range(votes.shape[0]):
         votesi = votes[i][:,:,range(int(prop_votes*raws['close'].shape[1]))]
@@ -316,6 +283,18 @@ def voting2(votes,prop_votes,prop_robots):
     return(rlt)
 
 ##########################################################################################
+# Rolling Modeling
+##########################################################################################
+
+#Read codelist
+
+codelist = []
+datelist = []
+with open('data/codelist0519.txt', 'r') as file:
+    lines = file.readlines()
+    for line in lines:
+        codelist.append(line.split(','))
+        datelist.append(line.split(',')[0])
 
 #Parameter
 
@@ -333,16 +312,6 @@ num_robots = 10000
 prop_votes = 0.1
 prop_robots = 0.1
 hat_inv = 0.1
-
-#Read codelist
-
-codelist = []
-datelist = []
-with open('data/codelist0519.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
 
 #loaddata
 
@@ -375,15 +344,14 @@ for i in range(len(datasets)):
 
 votes = roboting(num_robots,models)
 np.savez(f'rlt/vote{date0}.npz',votes=votes,raw=raw)
-rlt = voting2(votes,prop_votes,prop_robots)
+rlt = voting(votes,prop_votes,prop_robots)
 rlt = pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-rlt[rlt['index']>1]['index']
 
 #Rolling
 
-for rawi in range(3,len(codelist)):
+for rawi in range(3,len(codelist)+1):
     vote0 = np.load(f'rlt/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
-    rlt0 = voting2(vote0['votes'],prop_votes,prop_robots)
+    rlt0 = voting(vote0['votes'],prop_votes,prop_robots)
     newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0[rlt0['index']>1].index.tolist()))
     codelist[rawi-1] = newcode
     print(newcode[0])
@@ -407,28 +375,28 @@ for rawi in range(3,len(codelist)):
     votes = roboting(num_robots,models)
     np.savez(f'rlt/vote{date0}.npz',votes=votes,raw=raw)
 
-#Testback
+##########################################################################################
+# Testback
+##########################################################################################
 
 trans = []
 rltfiles = np.sort(os.listdir('rlt'))
-rltfiles = rltfiles[range(len(rltfiles)-1)]
 print(rltfiles)
 for i in rltfiles:
     if 'vote' in i:
         print(i)
         rlti = np.load(f'rlt/{i}',allow_pickle=True)
-        votes = rlti['votes'][:,:,:,:]
+        votes = rlti['votes'][:,range(100),:,:]
         raw = pd.DataFrame(rlti['raw'])
         raw.columns = ['date','open','close','high','low','val','code']
         datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[1])
-        transi = voting2(votes[:,:,:,:],prop_votes,prop_robots)
+        transi = voting(votes,prop_votes,prop_robots)
         transi['date'] = i.split('.')[0].replace('vote','')
         trans.append(transi)
 
-
 trans = pd.concat(trans,axis=0)
 trans2 = []
-for datei in range(1,len(datelist)-1):
+for datei in range(1,len(datelist)):
     date0 = datelist[datei]
     date1 = datelist[datei+1]
     transi = trans[(trans['date']==date0)&(trans['index']>5)]
@@ -454,3 +422,7 @@ for i in trans2:
     tonitei = np.sum(i.open1/i.close0*i.share)
     roi *= todayi*tonitei
     print([min(i.date),i.shape[0],todayi,tonitei,todayi*tonitei,roi])
+
+pd.merge(trans[(trans['index']>3)&(trans['date']==max(trans['date']))],
+    ak.stock_info_a_code_name(),left_index=True, right_on='code')
+
