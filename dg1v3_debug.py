@@ -17,6 +17,7 @@ import datetime
 from collections import Counter
 import math
 import akshare as ak
+from scipy.stats import binom_test
 
 def printlog(x):
     print(datetime.datetime.now(), x)
@@ -24,8 +25,10 @@ def printlog(x):
 def loaddata(codelist):
     date0 = codelist[len(codelist)-2][0]
     codes = codelist[len(codelist)-1][1:]
-for i in range(len(codes)):
-    codes[i] = codes[i].replace('\n','')
+    codes2 = []
+    for i in range(len(codes)):
+        codes2.append(codes[i].replace('\n',''))
+    codes = np.unique(codes2)
     raw = []
     for codei in codes:
         rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq").iloc()[:,range(7)]
@@ -279,8 +282,35 @@ def voting(votes,prop_votes,prop_robots):
         rlts.append(rlti)
     rlt = pd.concat(rlts,axis=0).groupby('code').agg({'count':'sum'}).sort_values('count',ascending=False)
     rlt['index'] = rlt['count']/(np.sum(rlt['count'])/today.shape[1])
-    # rlt['code'] = rlt.index
+    rlt['code'] = rlt.index
+    rltp = []
+    for i in rlt['count']:
+        rltp.append(binom_test(i,np.prod(votes.shape[0:2])*prop_robots,votesi.shape[2]/votes.shape[3],alternative='greater'))
+    rlt['pvalue'] = np.ravel(rltp)
     return(rlt)
+
+    
+
+# def voting(votes,prop_votes,prop_robots):
+#     votes = votes.reshape((np.prod(votes.shape[0:2]), 6, votes.shape[3]))[:,:,range(int(prop_votes*votes.shape[3]))]
+#     today = np.asarray(raws['close'].iloc()[-5:,:])/np.asarray(raws['open'].iloc()[-5:,:])
+#     tonite = (np.asarray(raws['open'].iloc()[1:,:])/np.asarray(raws['close'].iloc()[range(raws['close'].shape[0]-1),:]))[-4:,:]
+#     tonite = np.concatenate((tonite,np.asarray([1]*tonite.shape[1]).reshape(1,tonite.shape[1])),axis=0)
+#     scores = []
+#     for r in range(votes.shape[0]):
+#         votei = votes[r,:,:]
+#         roi = 1
+#         for i in range(5):
+#             roi *= np.mean(today[i,votei[i]])*np.mean(tonite[i,votei[i]])
+#         scores.append(roi)
+#     scores = np.asarray(scores)
+#     robots = (-(scores)).argsort()
+#     robots = robots[range(int(len(robots)*prop_robots))]
+#     votes2 = np.ravel(votes[robots,5,:])
+#     rlt = pd.DataFrame.from_dict(Counter(np.ravel(votes2)), orient='index', columns=['count']).sort_values('count',ascending=False)
+#     rlt['code'] = raws['close'].columns[rlt.index]
+#     rlt['index'] = rlt['count']/(np.sum(rlt['count'])/today.shape[1])
+#     return(rlt)
 
 ##########################################################################################
 # Rolling Modeling
@@ -351,6 +381,9 @@ rlt = pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
 
 for rawi in range(3,len(codelist)+1):
     vote0 = np.load(f'rlt/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
+    raw0 = pd.DataFrame(vote0['raw'])
+    raw0.columns = ['date','open','close','high','low','val','code']
+    datasets_,X_,Y_,Z_,X2_,Zscaler_,raws = process(raw0,40,[303])
     rlt0 = voting(vote0['votes'],prop_votes,prop_robots)
     newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0[rlt0['index']>1].index.tolist()))
     codelist[rawi-1] = newcode
@@ -376,6 +409,44 @@ for rawi in range(3,len(codelist)+1):
     np.savez(f'rlt/vote{date0}.npz',votes=votes,raw=raw)
 
 ##########################################################################################
+# Trail
+##########################################################################################
+
+rawi = len(codelist)
+vote0 = np.load(f'rlt/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
+raw0 = pd.DataFrame(vote0['raw'])
+raw0.columns = ['date','open','close','high','low','val','code']
+datasets_,X_,Y_,Z_,X2_,Zscaler_,raws = process(raw0,40,[303])
+rlt0 = voting(vote0['votes'],prop_votes,prop_robots)
+newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0[rlt0['index']>1].index.tolist()))
+codelist[rawi-1] = newcode
+raw = loaddata(codelist[:rawi])
+rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
+rawsel = pd.DataFrame({
+'code':rawsel.columns,
+'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
+'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
+}).set_index('code')
+rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
+rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
+rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
+raw = raw[raw['code'].isin(rawsel.code)]
+date0 = codelist[rawi-1][0]
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[303,777,101,603])
+models = []
+for i in range(len(datasets)):
+    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+    models.append(model)
+
+votes = roboting(num_robots,models)
+np.savez(f'rlt/vote{date0}.npz',votes=votes,raw=raw)
+trans = voting(votes,prop_votes,prop_robots)
+trans['date'] = date0
+
+pd.merge(trans[(trans['index']>3)&(trans['date']==max(trans['date']))],
+    ak.stock_info_a_code_name(),left_index=True, right_on='code')
+
+##########################################################################################
 # Testback
 ##########################################################################################
 
@@ -386,7 +457,7 @@ for i in rltfiles:
     if 'vote' in i:
         print(i)
         rlti = np.load(f'rlt/{i}',allow_pickle=True)
-        votes = rlti['votes'][:,range(100),:,:]
+        votes = rlti['votes'][:,:,:,:]
         raw = pd.DataFrame(rlti['raw'])
         raw.columns = ['date','open','close','high','low','val','code']
         datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[1])
@@ -395,14 +466,17 @@ for i in rltfiles:
         trans.append(transi)
 
 trans = pd.concat(trans,axis=0)
+
 trans2 = []
 for datei in range(1,len(datelist)):
     date0 = datelist[datei]
+    print(date0)
     date1 = datelist[datei+1]
-    transi = trans[(trans['date']==date0)&(trans['index']>5)]
+    transi = trans[(trans['date']==date0)&(trans['pvalue']<0.005)]
     transi['share'] = transi['count']/np.sum(transi['count'])
+    transi['code'] = transi.index
     refi = []
-    for codei in transi.index:
+    for codei in transi['code']:
         refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date0, end_date=date1, adjust="qfq").iloc()[:,[1,2]]))
     refi = pd.DataFrame(np.asarray(refi))
     if refi.shape[1]==4:
@@ -425,4 +499,7 @@ for i in trans2:
 
 pd.merge(trans[(trans['index']>3)&(trans['date']==max(trans['date']))],
     ak.stock_info_a_code_name(),left_index=True, right_on='code')
+
+trans.to_csv('rlt/testback0522.csv')
+
 
