@@ -472,7 +472,7 @@ for datei in range(1,len(datelist)):
     date0 = datelist[datei]
     print(date0)
     date1 = datelist[datei+1]
-    transi = trans[(trans['date']==date0)&(trans['pvalue']<0.005)]
+    transi = trans[(trans['date']==date0)&(trans['index']>5)]
     transi['share'] = transi['count']/np.sum(transi['count'])
     transi['code'] = transi.index
     refi = []
