@@ -409,7 +409,6 @@ for rawi in range(3,len(codelist)):
 
 #Testback
 
-rlts1 = []
 trans = []
 rltfiles = np.sort(os.listdir('rlt'))
 rltfiles = rltfiles[range(len(rltfiles)-1)]
@@ -418,64 +417,22 @@ for i in rltfiles:
     if 'vote' in i:
         print(i)
         rlti = np.load(f'rlt/{i}',allow_pickle=True)
-        votes = rlti['votes']
+        votes = rlti['votes'][:,:,:,:]
         raw = pd.DataFrame(rlti['raw'])
         raw.columns = ['date','open','close','high','low','val','code']
         datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[1])
-        rlt = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv=3)
-        rlt = pd.merge(rlt,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-        rlt['date'] = i.split('.')[0].replace('vote','')
-        rlts1.append(rlt)
-        transi = voting(votes[:,:,:,:],prop_votes,prop_robots,hat_inv=1)
+        transi = voting2(votes[:,:,:,:],prop_votes,prop_robots)
         transi['date'] = i.split('.')[0].replace('vote','')
         trans.append(transi)
 
-rlts2 = []
-for i in range(1,len(rlts1)):
-    rlti = pd.concat((rlts1[i],rlts1[i-1]),ignore_index=True).groupby(['code','name']).agg({'count':'sum','share':'sum'})
-    rlti['share'] = rlti['share']/2
-    rlti['date'] = max(rlts1[i]['date'])
-    rlts2.append(rlti)
-
-rlts = pd.concat(rlts1,axis=0)
-rltspvt = pd.pivot_table(rlts, values='share', index=['date'], columns=['code']).fillna(0)
-ref = []
-for codei in rltspvt.columns:
-    refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(min(rltspvt.index.tolist())), end_date=int(max(rltspvt.index.tolist())), adjust="qfq")
-    refi = refi.iloc()[:,range(3)]
-    refi.columns = ['date','open','close']
-    refi['code'] = codei
-    ref.append(refi)
-
-ref = pd.concat(ref,axis=0)
-openpvt = pd.pivot_table(ref, values='open', index=['date'], columns=['code'])
-closepvt = pd.pivot_table(ref, values='close', index=['date'], columns=['code'])
-todaypvt = np.asarray(closepvt)/np.asarray(openpvt)
-tonitepvt = np.asarray(openpvt[1:])/np.asarray(openpvt.iloc()[range(openpvt.shape[0]-1),:])
-tonitepvt = np.concatenate((tonitepvt,np.asarray([1]*tonitepvt.shape[1]).reshape(1,tonitepvt.shape[1])),axis=0)
-transpvt = np.asarray(rltspvt)
-tonitepvt[np.isnan(tonitepvt)] = 1
-todaypvt[np.isnan(todaypvt)] = 1
-
-rlt = pd.DataFrame({
-    'date':rltspvt.index,
-    'today':(transpvt*todaypvt).sum(axis=1),
-    'tonite':(transpvt*tonitepvt).sum(axis=1),
-    'profit':(transpvt*todaypvt).sum(axis=1)*(transpvt*tonitepvt).sum(axis=1)
-})
-rlt['accum'] = np.cumprod(rlt['profit'])
-print(rlt)
-
-#Trans Calculation
 
 trans = pd.concat(trans,axis=0)
-
 trans2 = []
 for datei in range(1,len(datelist)-1):
     date0 = datelist[datei]
     date1 = datelist[datei+1]
     transi = trans[(trans['date']==date0)&(trans['index']>5)]
-    transi['share'] = transi['share']/np.sum(transi['share'])
+    transi['share'] = transi['count']/np.sum(transi['count'])
     refi = []
     for codei in transi.index:
         refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date0, end_date=date1, adjust="qfq").iloc()[:,[1,2]]))
