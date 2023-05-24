@@ -367,7 +367,7 @@ rlt['date'] = date0
 
 #Rolling
 
-for rawi in range(3,len(codelist)+1):
+for rawi in range(3,len(codelist)):
     vote0 = np.load(f'{rltfolder}/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
     raw0 = pd.DataFrame(vote0['raw'])
     raw0.columns = ['date','open','close','high','low','val','code']
@@ -597,7 +597,7 @@ trans.to_csv(f'{rltfolder}/testback0522.csv')
 # Revoting
 ##########################################################################################
 
-rltfolder = 'rlt'
+rltfolder = 'rlt/cop'
 
 #Read codelist
 
@@ -607,14 +607,12 @@ with open('data/newcode0523.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
-
-codelist.append(['20230525'])
+        datelist.append(line.split(',')[0].replace('\n',''))
 
 #Parameter
 
 device = torch.device('cuda')
-seeds = [303,777,101,602]
+seeds = [303]
 hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
@@ -637,16 +635,15 @@ for datai in range(2,len(codelist)-1):
     date2 = codelist[datai] #Valid dat
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
-    model = np.load(f'rlt/vote{date1}.npz',allow_pickle=True)
+    model = np.load(f'{rltfolder}/vote{date1}.npz',allow_pickle=True)
     votes = model['votes']
     raw = model['raw']
     raw = pd.DataFrame(raw)
     raw.columns = ['date','open','close','high','low','val','code']
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
     rlt = voting(votes,prop_votes,prop_robots)
-    # rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-    # rlt = rlt[np.cumsum(rlt['share'])<=1]
-    rlt = rlt[rlt['index']>=5]
+    rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
+    rlt = rlt[(np.cumsum(rlt['share'])<=1)&(rlt['index']>5)]
     rlt['share'] = rlt['count']/np.sum(rlt['count'])
     transi = rlt
     refi = []
@@ -667,4 +664,4 @@ for datai in range(2,len(codelist)-1):
     printlog(transi)
     printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
 
-pd.concat(trans,axis=0).to_csv('testback_2daypool.csv')
+pd.concat(trans,axis=0).to_csv(f'{rltfolder}/testback_0524.csv')
