@@ -532,67 +532,6 @@ for i in range(len(datasets)):
 votes = roboting(num_robots,models)
 np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
 
-
-##########################################################################################
-# Testback
-##########################################################################################
-
-trans = []
-rltfiles = np.sort(os.listdir('rlt'))
-print(rltfiles)
-for i in rltfiles:
-    if 'vote' in i:
-        print(i)
-        rlti = np.load(f'{rltfolder}/{i}',allow_pickle=True)
-        votes = rlti['votes'][:,:,:,:]
-        raw = pd.DataFrame(rlti['raw'])
-        raw.columns = ['date','open','close','high','low','val','code']
-        datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,[1])
-        transi = voting(votes,prop_votes,prop_robots)
-        transi['date'] = i.split('.')[0].replace('vote','')
-        trans.append(transi)
-
-trans = pd.concat(trans,axis=0)
-
-trans2 = []
-for datei in range(1,len(datelist)):
-    date0 = datelist[datei]
-    print(date0)
-    date1 = datelist[datei+1]
-    transi = trans[(trans['date']==date0)]
-    transi['share'] = transi['count']/100*0.2
-    transi = transi[np.cumsum(transi['share'])<1]
-    transi['share'] = transi['share']/np.sum(transi['share'])
-    # transi = trans[(trans['date']==date0)&(trans['index']>3)]
-    # transi['share'] = transi['count']/np.sum(transi['count'])
-    # transi['code'] = transi.index
-    refi = []
-    for codei in transi['code']:
-        refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date0, end_date=date1, adjust="qfq").iloc()[:,[1,2]]))
-    refi = pd.DataFrame(np.asarray(refi))
-    if refi.shape[1]==4:
-        refi.columns = ['open0','close0','open1','close1']
-    else: 
-        refi = pd.concat((refi,refi),axis=1)
-        refi.iloc()[:,2] = refi.iloc()[:,1]
-        refi.iloc()[:,3] = refi.iloc()[:,1]
-        refi.columns = ['open0','close0','open1','close1']
-    refi.index = transi.index
-    transi = pd.concat([transi,refi],axis=1)
-    trans2.append(transi)
-
-roi = 1
-for i in trans2:
-    todayi = np.sum(i.close0/i.open0*i.share)
-    tonitei = np.sum(i.open1/i.close0*i.share)
-    roi *= todayi*tonitei
-    print([min(i.date),i.shape[0],todayi,tonitei,todayi*tonitei,roi])
-
-pd.merge(trans[(trans['index']>5)&(trans['date']==max(trans['date']))],
-    ak.stock_info_a_code_name(),left_index=True, right_on='code')
-
-trans.to_csv(f'{rltfolder}/testback0522.csv')
-
 ##########################################################################################
 # Revoting
 ##########################################################################################
