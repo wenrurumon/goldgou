@@ -307,7 +307,7 @@ def voting(votes,prop_votes,prop_robots):
     return(rlt)
 
 ##########################################################################################
-# Pool Combo
+# Pool Combo - List 250
 ##########################################################################################
 
 rltfolder = 'rlt/cop'
@@ -409,7 +409,7 @@ votes = roboting(num_robots,models)
 np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
 
 ##########################################################################################
-# Pool Combo 2
+# Pool Combo - List 150
 ##########################################################################################
 
 rltfolder = 'rlt/cop2'
@@ -418,7 +418,7 @@ rltfolder = 'rlt/cop2'
 
 codelist = []
 datelist = []
-with open('data/newcode0523.txt', 'r') as file:
+with open('data/newcode150.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
@@ -448,7 +448,7 @@ hat_inv = 0.1
 
 trans = []
 
-for datai in range(2,len(codelist)):
+for datai in range(2,len(codelist)+1):
     #Data Loading
     codes1 = codelist[datai-1]
     codes0 = codelist[datai-2]
@@ -500,6 +500,84 @@ rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.li
 rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
 printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
 raw = raw[raw['code'].isin(rawsel.code)]
+#Modeling
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+models = []
+for i in range(len(datasets)):
+    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+    models.append(model)
+
+votes = roboting(num_robots,models)
+np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
+
+##########################################################################################
+# Pool Combo Nonfilter - List 150
+##########################################################################################
+
+rltfolder = 'rlt/cop2nd'
+
+#Read codelist
+
+codelist = []
+datelist = []
+with open('data/newcode150.txt', 'r') as file:
+    lines = file.readlines()
+    for line in lines:
+        codelist.append(line.split(','))
+        datelist.append(line.split(',')[0])
+
+datelist.append('20230529')
+
+#Parameter
+
+device = torch.device('cuda')
+seeds = [303,777,101,602]
+hidden_dim = 1024
+latent_dim = 128
+dropout_rate = 0.5
+l2_reg = 0.01
+num_epochs = 10000
+lr = 0.001
+early_tol = 1.1
+patience = 20
+patience2 = 10
+num_robots = 10000
+prop_votes = 0.05
+prop_robots = 0.1
+hat_inv = 0.1
+
+#Rolling
+
+trans = []
+
+for datai in range(2,len(codelist)+1):
+    #Data Loading
+    codes1 = codelist[datai-1]
+    codes0 = codelist[datai-2]
+    date1 = codes1[0] #buy date
+    date0 = codes0[0] #data ending date
+    printlog(date1)
+    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
+    raw = loaddata2(date0,codes2try)
+    #Modeling
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+    models = []
+    for i in range(len(datasets)):
+        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+        models.append(model)
+    votes = roboting(num_robots,models)
+    np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
+
+# Trail
+
+datai = len(codelist)
+codes1 = codelist[datai-1]
+codes0 = codelist[datai-2]
+date1 = codes1[0] #buy date
+date0 = codes0[0] #data ending date
+printlog(date1)
+codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
+raw = loaddata2(date0,codes2try)
 #Modeling
 datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
 models = []
@@ -586,23 +664,23 @@ for datai in range(2,len(codelist)+1):
 
 pd.concat(trans,axis=0).to_csv(f'{rltfolder}/testback_0524.csv')
 
-#############################################################################################
-#############################################################################################
+##########################################################################################
+##########################################################################################
 # Appendix
-#############################################################################################
-#############################################################################################
-
 ##########################################################################################
-# Pool Current
 ##########################################################################################
 
-rltfolder = 'rlt/cup'
+##########################################################################################
+# Pool Current - List 150
+##########################################################################################
+
+rltfolder = 'rlt/cup2'
 
 #Read codelist
 
 codelist = []
 datelist = []
-with open('data/newcode0523.txt', 'r') as file:
+with open('data/newcode150.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
@@ -717,3 +795,4 @@ trans['date'] = date0
 
 pd.merge(trans[(trans['index']>5)&(trans['date']==max(trans['date']))],
     ak.stock_info_a_code_name(),left_index=True, right_on='code')
+
