@@ -448,6 +448,8 @@ with open('data/newcode0523.txt', 'r') as file:
         codelist.append(line.split(','))
         datelist.append(line.split(',')[0])
 
+datelist.append('20230529')
+
 #Parameter
 
 device = torch.device('cuda')
@@ -548,6 +550,8 @@ with open('data/newcode0523.txt', 'r') as file:
         codelist.append(line.split(','))
         datelist.append(line.split(',')[0].replace('\n',''))
 
+datelist.append('20230529')
+
 #Parameter
 
 device = torch.device('cuda')
@@ -568,10 +572,10 @@ hat_inv = 0.2
 
 trans = []
 #Rolling
-for datai in range(2,len(codelist)-1):
+for datai in range(2,len(codelist)+1):
     codes1 = codelist[datai-1]
     codes0 = codelist[datai-2]
-    date2 = codelist[datai] #Valid dat
+    date2 = datelist[datai] #Valid date
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
     model = np.load(f'{rltfolder}/vote{date1}.npz',allow_pickle=True)
