@@ -608,3 +608,4 @@ for datai in range(2,len(codelist)+1):
     printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
 
 pd.concat(trans,axis=0).to_csv(f'{rltfolder}/testback_0524.csv')
+
