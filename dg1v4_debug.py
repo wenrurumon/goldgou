@@ -593,13 +593,14 @@ np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
 # Revoting
 ##########################################################################################
 
-rltfolder = 'rlt/cop'
+rltfolder = 'rlt/cop2nd'
 
 #Read codelist
 
 codelist = []
 datelist = []
-with open('data/newcode0523.txt', 'r') as file:
+# with open('data/newcode0523.txt', 'r') as file:
+with open('data/newcode150.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
@@ -641,7 +642,8 @@ for datai in range(2,len(codelist)+1):
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
     rlt = voting(votes,prop_votes,prop_robots)
     rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-    rlt = rlt[(np.cumsum(rlt['share'])<=1)&(rlt['index']>5)]
+    rlt = rlt[(np.cumsum(rlt['share'])<=1)]
+    rlt = rlt[(rlt['index']>5)]
     rlt['share'] = rlt['count']/np.sum(rlt['count'])
     transi = rlt
     refi = []
