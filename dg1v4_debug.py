@@ -300,29 +300,26 @@ def voting(votes,prop_votes,prop_robots):
     rlt = pd.concat(rlts,axis=0).groupby('code').agg({'count':'sum'}).sort_values('count',ascending=False)
     rlt['index'] = rlt['count']/(np.sum(rlt['count'])/today.shape[1])
     rlt['code'] = rlt.index
-    # rltp = []
-    # for i in rlt['count']:
-    #     rltp.append(binom_test(i,np.prod(votes.shape[0:2])*prop_robots,votesi.shape[2]/votes.shape[3],alternative='greater'))
-    # rlt['pvalue'] = np.ravel(rltp)
     return(rlt)
 
 ##########################################################################################
-# Pool Combo - List 250
+# Modeling with one codelist
 ##########################################################################################
 
-rltfolder = 'rlt/cop'
+codefile = 'jgp'
+codefilter = False
+range0 = 1
+# range0 = len(codelist)-1
 
 #Read codelist
 
 codelist = []
 datelist = []
-with open('data/newcode0523.txt', 'r') as file:
+with open(f'data/codelist_{codefile}.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
         datelist.append(line.split(',')[0])
-
-datelist.append('20230529')
 
 #Parameter
 
@@ -332,291 +329,7 @@ hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
 l2_reg = 0.01
-num_epochs = 10000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-hat_inv = 0.1
-
-#Rolling
-
-trans = []
-
-for datai in range(2,len(codelist)):
-    #Data Loading
-    codes1 = codelist[datai-1]
-    codes0 = codelist[datai-2]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata2(date0,codes2try)
-    #Code Filtering
-    rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-    rawsel = pd.DataFrame({
-    'code':rawsel.columns,
-    'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-    'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-    }).set_index('code')
-    rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-    rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-    rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-    printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-    raw = raw[raw['code'].isin(rawsel.code)]
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-# Trail
-
-datai = len(codelist)
-codes1 = codelist[datai-1]
-codes0 = codelist[datai-2]
-date1 = codes1[0] #buy date
-date0 = codes0[0] #data ending date
-printlog(date1)
-codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-raw = loaddata2(date0,codes2try)
-#Code Filtering
-rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-rawsel = pd.DataFrame({
-'code':rawsel.columns,
-'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-}).set_index('code')
-rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-raw = raw[raw['code'].isin(rawsel.code)]
-#Modeling
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
-
-votes = roboting(num_robots,models)
-np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-##########################################################################################
-# Pool Combo - List 150
-##########################################################################################
-
-rltfolder = 'rlt/cop2'
-
-#Read codelist
-
-codelist = []
-datelist = []
-with open('data/newcode150.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
-
-datelist.append('20230529')
-
-#Parameter
-
-device = torch.device('cuda')
-seeds = [303,777,101,602]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-hat_inv = 0.1
-
-#Rolling
-
-trans = []
-
-for datai in range(2,len(codelist)+1):
-    #Data Loading
-    codes1 = codelist[datai-1]
-    codes0 = codelist[datai-2]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata2(date0,codes2try)
-    #Code Filtering
-    rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-    rawsel = pd.DataFrame({
-    'code':rawsel.columns,
-    'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-    'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-    }).set_index('code')
-    rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-    rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-    rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-    printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-    raw = raw[raw['code'].isin(rawsel.code)]
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-# Trail
-
-datai = len(codelist)
-codes1 = codelist[datai-1]
-codes0 = codelist[datai-2]
-date1 = codes1[0] #buy date
-date0 = codes0[0] #data ending date
-printlog(date1)
-codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-raw = loaddata2(date0,codes2try)
-#Code Filtering
-rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-rawsel = pd.DataFrame({
-'code':rawsel.columns,
-'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-}).set_index('code')
-rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-raw = raw[raw['code'].isin(rawsel.code)]
-#Modeling
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
-
-votes = roboting(num_robots,models)
-np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-##########################################################################################
-# Pool Combo Nonfilter - List 150
-##########################################################################################
-
-rltfolder = 'rlt/cop2nd'
-
-#Read codelist
-
-codelist = []
-datelist = []
-with open('data/newcode150.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
-
-datelist.append('20230529')
-
-#Parameter
-
-device = torch.device('cuda')
-seeds = [303,777,101,602]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-hat_inv = 0.1
-
-#Rolling
-
-trans = []
-
-for datai in range(2,len(codelist)+1):
-    #Data Loading
-    codes1 = codelist[datai-1]
-    codes0 = codelist[datai-2]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata2(date0,codes2try)
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-# Trail
-
-datai = len(codelist)
-codes1 = codelist[datai-1]
-codes0 = codelist[datai-2]
-date1 = codes1[0] #buy date
-date0 = codes0[0] #data ending date
-printlog(date1)
-codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-raw = loaddata2(date0,codes2try)
-#Modeling
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
-
-votes = roboting(num_robots,models)
-np.savez(f'{rltfolder}/vote{date1}.npz',votes=votes,raw=raw)
-
-
-##########################################################################################
-# Revoting
-##########################################################################################
-
-rltfolder = 'rlt/cop2nd'
-
-#Read codelist
-
-codelist = []
-datelist = []
-# with open('data/newcode0523.txt', 'r') as file:
-with open('data/newcode150.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0].replace('\n',''))
-
-datelist.append('20230529')
-
-#Parameter
-
-device = torch.device('cuda')
-seeds = [303]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
+num_epochs = 100000
 lr = 0.001
 early_tol = 1.1
 patience = 20
@@ -626,15 +339,50 @@ prop_votes = 0.05
 prop_robots = 0.1
 hat_inv = 0.2
 
-trans = []
 #Rolling
-for datai in range(2,len(codelist)+1):
-    codes1 = codelist[datai-1]
-    codes0 = codelist[datai-2]
-    date2 = datelist[datai] #Valid date
+
+for datai in range(range0,len(codelist)):
+    #Data Loading
+    codes1 = codelist[datai]
+    codes0 = codelist[datai-1]
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
-    model = np.load(f'{rltfolder}/vote{date1}.npz',allow_pickle=True)
+    printlog(date1)
+    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
+    raw = loaddata2(date0,codes2try)
+    #Code Filtering
+    if codefilter:
+        rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
+        rawsel = pd.DataFrame({
+        'code':rawsel.columns,
+        'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
+        'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
+        }).set_index('code')
+        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
+        rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
+        rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
+        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
+        raw = raw[raw['code'].isin(rawsel.code)]
+    #Modeling
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+    models = []
+    for i in range(len(datasets)):
+        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+        models.append(model)
+    votes = roboting(num_robots,models)
+    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
+
+# Voting
+
+trans = []
+#Rolling
+for datai in range(range0,len(codelist)):
+    codes1 = codelist[datai]
+    codes0 = codelist[datai-1]
+    date2 = datelist[datai+1]
+    date1 = codes1[0] #buy date
+    date0 = codes0[0] #data ending date
+    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
     votes = model['votes']
     raw = model['raw']
     raw = pd.DataFrame(raw)
@@ -664,29 +412,74 @@ for datai in range(2,len(codelist)+1):
     printlog(transi)
     printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
 
-pd.concat(trans,axis=0).to_csv(f'{rltfolder}/testback_0524.csv')
+pd.concat(trans,axis=0).to_csv(f'rlt/{codefile}.csv')
+
+roi = 1
+for transi in trans:
+    printlog(np.unique(transi['date']))
+    roi *= np.sum(transi.close1/transi.open0*transi.share)
+    printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
+
+# New Model
+
+datai = len(codelist)-1
+codes1 = codelist[datai]
+codes0 = codelist[datai-1]
+date1 = codes1[0] #buy date
+date0 = codes0[0] #data ending date
+model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
+votes = model['votes']
+raw = model['raw']
+raw = pd.DataFrame(raw)
+raw.columns = ['date','open','close','high','low','val','code']
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+rlt = voting(votes,prop_votes,prop_robots)
+rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
+rlt = rlt[(np.cumsum(rlt['share'])<=1)]
+rlt = rlt[(rlt['index']>5)]
+rlt['share'] = rlt['count']/np.sum(rlt['count'])
+rlt['date'] = date1
+rlt['model'] = codefile
 
 ##########################################################################################
-##########################################################################################
-# Appendix
-##########################################################################################
+# Modeling with dual codelist
 ##########################################################################################
 
-##########################################################################################
-# Pool Current - List 150
-##########################################################################################
+codefile = 'merge2' #merge  2 for non filter
+if codefile=='merge':
+    codefilter = True
+else:
+    codefilter = False
 
-rltfolder = 'rlt/cup2'
+range0 = 1
+# range0 = len(codelist)-1
 
 #Read codelist
 
-codelist = []
-datelist = []
-with open('data/newcode150.txt', 'r') as file:
+qslist = []
+qsdate = []
+jglist = []
+jgdate = []
+
+with open(f'data/codelist_qs.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
+        qslist.append(line.split(','))
+        qsdate.append(line.split(',')[0])
+
+with open(f'data/codelist_jgp.txt', 'r') as file:
+    lines = file.readlines()
+    for line in lines:
+        jglist.append(line.split(','))
+        jgdate.append(line.split(',')[0])
+
+jglist = jglist[3:]
+jgdate = jgdate[3:]
+
+codelist = []
+datelist = jgdate
+for i in range(len(jglist)):
+    codelist.append(qslist[i]+jglist[i][1:])
 
 #Parameter
 
@@ -696,7 +489,7 @@ hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
 l2_reg = 0.01
-num_epochs = 10000
+num_epochs = 100000
 lr = 0.001
 early_tol = 1.1
 patience = 20
@@ -704,97 +497,86 @@ patience2 = 10
 num_robots = 10000
 prop_votes = 0.05
 prop_robots = 0.1
-hat_inv = 0.1
-
-#loaddata
-rawi = 2
-codelist[rawi-1][0]
-raw = loaddata(codelist[:rawi])
-
-#processdata
-
-date0 = codelist[rawi-1][0]
-print(date0)
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-
-#Modeling
-
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
-
-#Robots
-
-votes = roboting(num_robots,models)
-np.savez(f'{rltfolder}/vote{date0}.npz',votes=votes,raw=raw)
-rlt = voting(votes,prop_votes,prop_robots)
-rlt['date'] = date0
+hat_inv = 0.2
 
 #Rolling
 
-for rawi in range(3,len(codelist)):
-    vote0 = np.load(f'{rltfolder}/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
-    raw0 = pd.DataFrame(vote0['raw'])
-    raw0.columns = ['date','open','close','high','low','val','code']
-    datasets_,X_,Y_,Z_,X2_,Zscaler_,raws = process(raw0,40,[303])
-    rlt0 = voting(vote0['votes'],prop_votes,prop_robots)
-    newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0[rlt0['index']>1].index.tolist()))
-    codelist[rawi-1] = newcode
-    print(newcode[0])
-    raw = loaddata(codelist[:rawi])
-    rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-    rawsel = pd.DataFrame({
-    'code':rawsel.columns,
-    'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-    'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-    }).set_index('code')
-    rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-    rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-    rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-    raw = raw[raw['code'].isin(rawsel.code)]
-    date0 = codelist[rawi-1][0]
+for datai in range(range0,len(codelist)):
+    #Data Loading
+    codes1 = codelist[datai]
+    codes0 = codelist[datai-1]
+    date1 = codes1[0] #buy date
+    date0 = codes0[0] #data ending date
+    printlog(date1)
+    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
+    raw = loaddata2(date0,codes2try)
+    #Code Filtering
+    if codefilter:
+        rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
+        rawsel = pd.DataFrame({
+        'code':rawsel.columns,
+        'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
+        'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
+        }).set_index('code')
+        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
+        rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
+        rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
+        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
+        raw = raw[raw['code'].isin(rawsel.code)]
+    #Modeling
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
     models = []
     for i in range(len(datasets)):
         model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
         models.append(model)
     votes = roboting(num_robots,models)
-    np.savez(f'{rltfolder}/vote{date0}.npz',votes=votes,raw=raw)
+    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
 
-# Trail
+# Voting
 
-rawi = len(codelist)
-vote0 = np.load(f'{rltfolder}/vote{codelist[rawi-2][0]}.npz',allow_pickle=True)
-raw0 = pd.DataFrame(vote0['raw'])
-raw0.columns = ['date','open','close','high','low','val','code']
-datasets_,X_,Y_,Z_,X2_,Zscaler_,raws = process(raw0,40,[303])
-rlt0 = voting(vote0['votes'],prop_votes,prop_robots)
-newcode = [codelist[rawi-1][0]] + list(set(codelist[rawi-1][1:]).union(rlt0[rlt0['index']>1].index.tolist()))
-codelist[rawi-1] = newcode
-raw = loaddata(codelist[:rawi])
-rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-rawsel = pd.DataFrame({
-'code':rawsel.columns,
-'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-}).set_index('code')
-rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-raw = raw[raw['code'].isin(rawsel.code)]
-date0 = codelist[rawi-1][0]
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
+trans = []
+#Rolling
+for datai in range(range0,len(codelist)):
+    codes1 = codelist[datai]
+    codes0 = codelist[datai-1]
+    date2 = datelist[datai+1]
+    date1 = codes1[0] #buy date
+    date0 = codes0[0] #data ending date
+    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
+    votes = model['votes']
+    raw = model['raw']
+    raw = pd.DataFrame(raw)
+    raw.columns = ['date','open','close','high','low','val','code']
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+    rlt = voting(votes,prop_votes,prop_robots)
+    rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
+    rlt = rlt[(np.cumsum(rlt['share'])<=1)]
+    rlt = rlt[(rlt['index']>5)]
+    rlt['share'] = rlt['count']/np.sum(rlt['count'])
+    transi = rlt
+    refi = []
+    for codei in transi['code']:
+        refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]]))
+    refi = pd.DataFrame(np.asarray(refi))
+    if refi.shape[1]==4:
+        refi.columns = ['open0','close0','open1','close1']
+    else: 
+        refi = pd.concat((refi,refi),axis=1)
+        refi.iloc()[:,2] = refi.iloc()[:,1]
+        refi.iloc()[:,3] = refi.iloc()[:,1]
+        refi.columns = ['open0','close0','open1','close1']
+    refi.index = transi.index
+    transi = pd.concat([transi,refi],axis=1)
+    transi['date'] = date1
+    trans.append(transi)
+    printlog(transi)
+    printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
 
-votes = roboting(num_robots,models)
-np.savez(f'{rltfolder}/vote{date0}.npz',votes=votes,raw=raw)
-trans = voting(votes,prop_votes,prop_robots)
-trans['date'] = date0
+pd.concat(trans,axis=0).to_csv(f'rlt/{codefile}.csv')
 
-pd.merge(trans[(trans['index']>5)&(trans['date']==max(trans['date']))],
-    ak.stock_info_a_code_name(),left_index=True, right_on='code')
+roi = 1
+for transi in trans:
+    printlog(np.unique(transi['date']))
+    roi *= np.sum(transi.close1/transi.open0*transi.share)
+    printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
 
