@@ -291,8 +291,6 @@ def voting(votes,prop_votes,prop_robots):
 
 codefile = 'tb'
 codefilter = False
-range0 = 1
-# range0 = len(codelist)-1
 
 #Read codelist
 
@@ -306,6 +304,8 @@ with open(f'data/codelist_{codefile}.txt', 'r') as file:
 
 #Parameter
 
+range0 = 1
+# range0 = len(codelist)-1
 device = torch.device('cuda')
 seeds = [303,777,101,602]
 hidden_dim = 1024
@@ -375,7 +375,7 @@ for datai in range(1,len(codelist)):
     rlt = rlt.reset_index(drop=True)
     rlts.append(rlt)
 
-# pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
+pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
 
 thres_index = 5
 trans = []
@@ -407,6 +407,10 @@ for i in range(len(rlts)-1):
 
 # New Model
 
+prop_votes = 0.05
+prop_robots = 0.1
+thres_index = 5
+
 datai = len(codelist)-1
 codes1 = codelist[datai]
 codes0 = codelist[datai-1]
@@ -419,13 +423,9 @@ raw = pd.DataFrame(raw)
 raw.columns = ['date','open','close','high','low','val','code']
 datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
 rlt = voting(votes,prop_votes,prop_robots)
-rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-rlt = rlt[(np.cumsum(rlt['share'])<=1)]
-rlt = rlt[(rlt['index']>5)]
-rlt['share'] = rlt['count']/np.sum(rlt['count'])
-rlt['date'] = date1
-rlt['model'] = codefile
-rlt
+rlt = rlt[rlt['index']>thres_index]
+rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
+
 
 ##########################################################################################
 # Modeling with dual codelist
@@ -565,4 +565,58 @@ for transi in trans:
     printlog(np.unique(transi['date']))
     roi *= np.sum(transi.close1/transi.open0*transi.share)
     printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
+
+##########################################
+
+jpg = pd.read_csv('rlt/rlts_jgp.csv')
+jpg['model'] = 'jgp'
+qs = pd.read_csv('rlt/rlts_qs.csv')
+qs['model'] = 'qs'
+
+rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
+rlt = rlt[rlt['index']>5]
+rlt = pd.merge(
+    rlt,
+    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
+    on=['date','model']
+)
+date = np.sort(np.unique(rlt['date']))
+rlt = rlt[rlt['date']!=20230530]
+
+def ref(datei,codei):
+    datei2 = date[(date!=datei).argsort()[0]+1]
+    codei = str(codei+1000000)[1:]
+    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
+    return(refi[len(refi)-1]/refi[0])
+
+refs = []
+for i in range(rlt.shape[0]):
+    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
+
+rlt['roi'] = refs
+rlt['share'] = rlt['count']/rlt['share']
+rlt['roi'] = rlt['roi']*rlt['share']
+rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum'}).reset_index()
+
+rlt = pd.merge(
+    rlt[rlt['model']=='qs'],
+    rlt[rlt['model']=='jgp'],
+    on='date'
+)
+rlt.columns = ['date','modelx','qs','modely','jgp']
+rlt = rlt.iloc[:,[0,2,4]]
+out = [rlt['jgp'].iloc()[0]]
+for i in range(rlt.shape[0]-1):
+    if rlt['qs'].iloc()[i]>rlt['jgp'].iloc()[i]:
+        out.append(rlt['qs'].iloc()[i+1])
+    else:
+        out.append(rlt['jgp'].iloc()[i+1])
+
+rlt['merge'] = out
+rlt['aqs'] = np.cumprod(rlt['qs'])
+rlt['ajgp'] = np.cumprod(rlt['jgp'])
+rlt['amerge'] = np.cumprod(rlt['merge'])
+rlt
+
+
 
