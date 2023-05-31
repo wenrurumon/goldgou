@@ -289,7 +289,7 @@ def voting(votes,prop_votes,prop_robots):
 # Modeling with one codelist
 ##########################################################################################
 
-codefile = 'tb'
+codefile = 'tbq'
 codefilter = False
 
 #Read codelist
@@ -377,7 +377,7 @@ for datai in range(1,len(codelist)):
 
 pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
 
-thres_index = 3
+thres_index = 5
 trans = []
 for rlt in rlts:
     rlt = rlt[rlt['index']>thres_index]
