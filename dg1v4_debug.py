@@ -22,24 +22,7 @@ from scipy.stats import binom_test
 def printlog(x):
     print(datetime.datetime.now(), x)
 
-def loaddata(codelist):
-    date0 = codelist[len(codelist)-2][0]
-    codes = codelist[len(codelist)-1][1:]
-    codes2 = []
-    for i in range(len(codes)):
-        codes2.append(codes[i].replace('\n',''))
-    codes = np.unique(codes2)
-    raw = []
-    for codei in codes:
-        rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq").iloc()[:,range(7)]
-        rawi.columns = ['date','open','close','high','low','vol','val']
-        rawi['code'] = codei
-        raw.append(rawi)
-    raw = pd.concat(raw,axis=0)
-    raw = raw.drop('vol', axis=1)
-    return(raw)
-
-def loaddata2(date0,codes):
+def loaddata(date0,codes):
     codes2 = []
     for i in range(len(codes)):
         codes2.append(codes[i].replace('\n',''))
@@ -306,10 +289,8 @@ def voting(votes,prop_votes,prop_robots):
 # Modeling with one codelist
 ##########################################################################################
 
-codefile = 'jgp'
+codefile = 'tb'
 codefilter = False
-range0 = 1
-# range0 = len(codelist)-1
 
 #Read codelist
 
@@ -335,12 +316,10 @@ early_tol = 1.1
 patience = 20
 patience2 = 10
 num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-hat_inv = 0.2
 
 #Rolling
 
+range0 = len(codelist)-1
 for datai in range(range0,len(codelist)):
     #Data Loading
     codes1 = codelist[datai]
@@ -349,7 +328,7 @@ for datai in range(range0,len(codelist)):
     date0 = codes0[0] #data ending date
     printlog(date1)
     codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata2(date0,codes2try)
+    raw = loaddata(date0,codes2try)
     #Code Filtering
     if codefilter:
         rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
@@ -374,14 +353,17 @@ for datai in range(range0,len(codelist)):
 
 # Voting
 
-trans = []
-#Rolling
-for datai in range(range0,len(codelist)):
+range0 = 1
+prop_votes = 0.05
+prop_robots = 0.1
+
+rlts = []
+for datai in range(1,len(codelist)):
     codes1 = codelist[datai]
     codes0 = codelist[datai-1]
-    date2 = datelist[datai+1]
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
+    printlog(date1)
     model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
     votes = model['votes']
     raw = model['raw']
@@ -389,11 +371,24 @@ for datai in range(range0,len(codelist)):
     raw.columns = ['date','open','close','high','low','val','code']
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
     rlt = voting(votes,prop_votes,prop_robots)
-    rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-    rlt = rlt[(np.cumsum(rlt['share'])<=1)]
-    rlt = rlt[(rlt['index']>5)]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
-    transi = rlt
+    rlt['date'] = date1
+    rlt = rlt.reset_index(drop=True)
+    rlts.append(rlt)
+
+pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
+
+thres_index = 3
+trans = []
+for rlt in rlts:
+    rlt = rlt[rlt['index']>thres_index]
+    rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
+    trans.append(rlt)
+
+roi = 1
+for i in range(len(rlts)-1):
+    date1 = rlts[i]['date'][0]
+    date2 = rlts[i+1]['date'][0]
+    transi = trans[i]
     refi = []
     for codei in transi['code']:
         refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]]))
@@ -407,20 +402,14 @@ for datai in range(range0,len(codelist)):
         refi.columns = ['open0','close0','open1','close1']
     refi.index = transi.index
     transi = pd.concat([transi,refi],axis=1)
-    transi['date'] = date1
-    trans.append(transi)
-    printlog(transi)
-    printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
-
-pd.concat(trans,axis=0).to_csv(f'rlt/{codefile}.csv')
-
-roi = 1
-for transi in trans:
-    printlog(np.unique(transi['date']))
     roi *= np.sum(transi.close1/transi.open0*transi.share)
-    printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
+    print(f'{np.unique(transi["date"])}, n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share):.4f}, AccumProfit:{roi:.4f}')
 
 # New Model
+
+prop_votes = 0.05
+prop_robots = 0.1
+thres_index = 5
 
 datai = len(codelist)-1
 codes1 = codelist[datai]
@@ -434,12 +423,9 @@ raw = pd.DataFrame(raw)
 raw.columns = ['date','open','close','high','low','val','code']
 datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
 rlt = voting(votes,prop_votes,prop_robots)
-rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-rlt = rlt[(np.cumsum(rlt['share'])<=1)]
-rlt = rlt[(rlt['index']>5)]
-rlt['share'] = rlt['count']/np.sum(rlt['count'])
-rlt['date'] = date1
-rlt['model'] = codefile
+rlt = rlt[rlt['index']>thres_index]
+rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
+
 
 ##########################################################################################
 # Modeling with dual codelist
@@ -509,7 +495,7 @@ for datai in range(range0,len(codelist)):
     date0 = codes0[0] #data ending date
     printlog(date1)
     codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata2(date0,codes2try)
+    raw = loaddata(date0,codes2try)
     #Code Filtering
     if codefilter:
         rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
@@ -579,4 +565,62 @@ for transi in trans:
     printlog(np.unique(transi['date']))
     roi *= np.sum(transi.close1/transi.open0*transi.share)
     printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
+
+##########################################
+
+jpg = pd.read_csv('rlt/rlts_jgp.csv')
+jpg['model'] = 'jgp'
+qs = pd.read_csv('rlt/rlts_qs.csv')
+qs['model'] = 'qs'
+
+rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
+rlt = rlt[rlt['index']>5]
+rlt = pd.merge(
+    rlt,
+    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
+    on=['date','model']
+)
+date = np.sort(np.unique(rlt['date']))
+rlt = rlt[rlt['date']<20230530].reset_index()
+date = np.append([20230407],date)
+
+def ref(datei,codei):
+    datei2 = date[(date!=datei).argsort()[0]+1]
+    datei1 = date[(date!=datei).argsort()[0]-1]
+    codei = str(codei+1000000)[1:]
+    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
+    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
+
+refs = []
+for i in range(rlt.shape[0]):
+    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
+
+refs = pd.DataFrame(np.asarray(refs))
+refs.columns = ['overnite0','roi']
+rlt = pd.concat((rlt,refs),axis=1)
+
+rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
+rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
+rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
+
+rlt = pd.merge(
+    rlt[rlt['model']=='qs'],
+    rlt[rlt['model']=='jgp'],
+    on='date'
+)
+
+out = []
+for i in range(rlt.shape[0]):
+    if rlt['overnite0_x'].iloc()[i] > rlt['overnite0_y'].iloc()[i]:
+        out.append(rlt['roi_x'].iloc()[i])
+    else:
+        out.append(rlt['roi_y'].iloc()[i])
+
+rlt['merge'] = out
+
+np.ravel(np.cumprod(rlt['roi_x']))
+np.ravel(np.cumprod(rlt['roi_y']))
+np.cumprod(out)
+
+
 
