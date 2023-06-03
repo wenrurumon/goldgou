@@ -289,7 +289,7 @@ def voting(votes,prop_votes,prop_robots):
 # Modeling with one codelist
 ##########################################################################################
 
-codefile = 'tbq'
+codefile = 'tbq2'
 codefilter = False
 
 #Read codelist
@@ -319,7 +319,8 @@ num_robots = 10000
 
 #Rolling
 
-range0 = len(codelist)-1
+range0 = 1
+# range0 = len(codelist)-1
 for datai in range(range0,len(codelist)):
     #Data Loading
     codes1 = codelist[datai]
@@ -391,7 +392,10 @@ for i in range(len(rlts)-1):
     transi = trans[i]
     refi = []
     for codei in transi['code']:
-        refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]]))
+        refii = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]])
+        if len(refii)==2:
+            refii = np.append(refii,[refii[1],refii[1]])
+        refi.append(refii)
     refi = pd.DataFrame(np.asarray(refi))
     if refi.shape[1]==4:
         refi.columns = ['open0','close0','open1','close1']
@@ -425,7 +429,7 @@ datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
 rlt = voting(votes,prop_votes,prop_robots)
 rlt = rlt[rlt['index']>thres_index]
 rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
-
+rlt
 
 ##########################################################################################
 # Modeling with dual codelist
@@ -589,6 +593,51 @@ def ref(datei,codei):
     datei1 = date[(date!=datei).argsort()[0]-1]
     codei = str(codei+1000000)[1:]
     refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
+    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
+
+refs = []
+for i in range(rlt.shape[0]):
+    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
+
+refs = pd.DataFrame(np.asarray(refs))
+refs.columns = ['overnite0','roi']
+rlt = pd.concat((rlt,refs),axis=1)
+
+rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
+rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
+rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
+
+rlt = pd.merge(
+    rlt[rlt['model']=='qs'],
+    rlt[rlt['model']=='jgp'],
+    on='date'
+)
+
+#########################
+
+jpg = pd.read_csv('rlt/rlts_tb.csv')
+jpg['model'] = 'jgp'
+qs = pd.read_csv('rlt/rlts_tbq.csv')
+qs['model'] = 'qs'
+
+rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
+rlt = rlt[rlt['index']>5]
+rlt = pd.merge(
+    rlt,
+    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
+    on=['date','model']
+)
+date = np.sort(np.unique(rlt['date']))
+rlt = rlt[rlt['date']<np.max(rlt['date'])].reset_index()
+date = np.append([20220730],date)
+
+def ref(datei,codei):
+    datei2 = date[(date!=datei).argsort()[0]+1]
+    datei1 = date[(date!=datei).argsort()[0]-1]
+    codei = str(codei+1000000)[1:]
+    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
+    if len(refi)==2:
+        refi = np.append(refi,[refi[1],refi[1]])
     return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
 
 refs = []
