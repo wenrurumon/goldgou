@@ -394,7 +394,7 @@ with open(f'data/code_{codefile}.txt', 'r') as file:
 #Parameter
 
 device = torch.device('cuda')
-prd1 = 20
+prd1 = 10
 seeds = [303,777,101,602]
 hidden_dim = 1024
 latent_dim = 128
@@ -458,4 +458,5 @@ else:
 
 refi.index = transi.index
 transi = pd.concat([transi,refi],axis=1)
+print(transi)
 print(f'{np.unique(transi["date"])}, n:{transi.shape[0]}, ggProfit:{np.sum(transi.open1/transi.open0*transi.share):.4f},ApeProfit:{np.sum(transi.close1/transi.open0*transi.share):.4f}')
