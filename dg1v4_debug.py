@@ -426,11 +426,11 @@ prop_robots = 0.1
 
 #Rolling
 
-rlts = []
+# rlts = []
 range0 = 1
 range0 = len(codelist)-1
 # for datai in range(range0,len(codelist)):
-for datai in range(36,len(codelist)):
+for datai in range(1,36):
     #Data Loading
     codes1 = codelist[datai]
     codes0 = codelist[datai-1]
@@ -463,8 +463,8 @@ for datai in range(36,len(codelist)):
     rlt['date'] = date1
     rlt = rlt.reset_index(drop=True)
     rlts.append(rlt)
-    rlt = rlt[rlt['index']>5]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
+    # rlt = rlt[rlt['index']>5]
+    # rlt['share'] = rlt['count']/np.sum(rlt['count'])
     printlog(rlt)
 
 pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}_{note}.csv')
@@ -493,12 +493,15 @@ for datai in range(1,len(codelist)):
 
 #Calculation
 
-thres_index = 5
+thres_index = 10
+hat_inv = 0.2
 trans = []
 for rlt in rlts:
-    # rlt = rlt.iloc()[range(10),:]
-    rlt = rlt[rlt['index']>thres_index]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
+    # rlt = rlt[rlt['index']>thres_index]
+    # rlt['share'] = rlt['count']/np.sum(rlt['count'])
+    rlt['share'] = rlt['count']/(num_robots*prop_robots) * hat_inv
+    rlt = rlt[np.cumsum(rlt['share'])<=1]
+    rlt['share'] = rlt['share']/np.sum(rlt['share'])
     trans.append(rlt)
 
 roi = 1
@@ -552,7 +555,7 @@ if codefilter:
 #Modeling
 datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
 models = []
-for i in range(len(datasets)):
+for i iqn range(len(datasets)):
     model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
     models.append(model)
 votes = roboting(num_robots,models)
