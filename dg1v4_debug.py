@@ -8,6 +8,7 @@ import torch.optim as optim
 import os
 from sklearn.preprocessing import StandardScaler
 import datetime
+from datetime import timedelta
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from scipy.stats import rankdata
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -40,7 +41,7 @@ def loaddata(date0,codes):
 def fill_missing_values(row):
     return row.fillna(method='ffill')
 
-def process(raw,prd1,seeds):
+def process1(raw,prd1,seeds):
     prd2 = 5
     raw =  raw.drop_duplicates()
     raw['date'] = pd.to_datetime(raw['date'])
@@ -94,6 +95,104 @@ def process(raw,prd1,seeds):
     Xval = np.asarray(Xval)
     Xval2 = np.asarray(Xval2)
     X = np.concatenate((Xclose,Xval2),axis=1)
+    P = []
+    B = []
+    for i in range(closepvt.shape[0]-prd1-prd2):
+        profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
+        backi = lowpvt[range(i+prd1+1,i+prd1+prd2+1),:].min(axis=0)/openpvt[i+prd1,None,:]
+        P.append(profi)
+        B.append(backi)
+    P = np.concatenate(P,axis=0)
+    B = np.concatenate(B,axis=0)
+    Z = P
+    Xscaler = StandardScaler()
+    Xscaler.fit(X)
+    X = Xscaler.transform(X)
+    Zscaler = StandardScaler()
+    Zscaler.fit(Z)
+    Z = Zscaler.transform(Z)
+    Y = X[-Z.shape[0]:,range(Xclose.shape[1])]
+    X2 = X[Z.shape[0]:,:]
+    X = X[range(Z.shape[0]),:]
+    X = torch.tensor(X).float().to(device)
+    Y = torch.tensor(Y).float().to(device)
+    Z = torch.tensor(Z).float().to(device)
+    X2 = torch.tensor(X2).float().to(device)
+    datasets = []
+    for seed in seeds:
+        np.random.seed(seed)
+        samples = np.random.permutation(np.ravel(range(X.shape[0])))
+        samples = np.ravel((samples%5).tolist())
+        for s in range(5):
+            X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+            datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+    life = []
+    for i in range(10, closepvt.shape[0]):
+        data = closepvt[(i-9):(i+1), :]
+        col_mean = np.mean(data, axis=0)
+        life.append(col_mean)
+    life = np.array(life)
+    raws['life'] = pd.DataFrame(life)
+    raws['life'].columns = raws['close'].columns
+    return(datasets,X,Y,Z,X2,Zscaler,raws)
+
+def process2(raw,prd1,seeds):
+    prd2 = 5
+    raw =  raw.drop_duplicates()
+    raw['date'] = pd.to_datetime(raw['date'])
+    raw = raw.sort_values(['code','date'])
+    raw['did'] = raw['date'].rank(method='dense').astype(int) - 1
+    def fill_missing_values(row):
+        return row.fillna(method='ffill')
+    raws = []
+    for i in ['open','close','val','high','low']:
+        rawi = pd.pivot_table(raw, values=i, index=['did'], columns=['code'])
+        rawi = rawi.apply(fill_missing_values,axis=0)
+        raws.append(rawi)
+    raws = dict(zip(['open','close','val','high','low'],raws))
+    codesel = ~np.isnan(np.ravel(raws['close'].iloc()[0,:]))
+    codes = np.ravel(raws['close'].columns)[codesel]
+    closepvt = np.asarray(raws['close'])[:,codesel]
+    openpvt = np.asarray(raws['open'])[:,codesel]
+    valpvt = np.asarray(raws['val'])[:,codesel]
+    lowpvt = np.asarray(raws['low'])[:,codesel]
+    highpvt = np.asarray(raws['high'])[:,codesel]
+    for i in ['open','close','val','high','low']:
+        raws[i] = raws[i].iloc()[:,codesel]
+    Xclose = []
+    for i in range(closepvt.shape[0]-(prd1-1)):
+        xi = closepvt[range(i, i + (prd1-1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xclose.append(np.ravel(xi.T))
+    Xclose = np.asarray(Xclose)
+    Xhigh = []
+    for i in range(highpvt.shape[0]-(prd1-1)):
+        xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
+        Xhigh.append(np.ravel(xi.T))
+    Xhigh = np.asarray(Xhigh)
+    Xlow = []
+    for i in range(lowpvt.shape[0]-(prd1-1)):
+        xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
+        Xlow.append(np.ravel(xi.T))
+    Xlow = np.asarray(Xlow)
+    Xopen = []
+    for i in range(highpvt.shape[0]-(prd1-1)):
+        xi = openpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
+        Xopen.append(np.ravel(xi.T))
+    Xopen = np.asarray(Xopen)
+    Xval = []
+    for i in range(valpvt.shape[0]-(prd1-1)):
+        xi = valpvt[range(i, i + (prd1-1)), :] / valpvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xval.append(np.ravel(xi.T))
+    Xval = np.asarray(Xval)
+    X = np.concatenate((Xclose,Xopen,Xhigh,Xlow,Xval),axis=1)
     P = []
     B = []
     for i in range(closepvt.shape[0]-prd1-prd2):
@@ -289,14 +388,15 @@ def voting(votes,prop_votes,prop_robots):
 # Modeling with one codelist
 ##########################################################################################
 
-codefile = 'tbq2'
-codefilter = False
+codefile = 'jgp3'
+codefilter = True
+note = 'filtered'
 
 #Read codelist
 
 codelist = []
 datelist = []
-with open(f'data/codelist_{codefile}.txt', 'r') as file:
+with open(f'data/code_{codefile}.txt', 'r') as file:
     lines = file.readlines()
     for line in lines:
         codelist.append(line.split(','))
@@ -316,18 +416,27 @@ early_tol = 1.1
 patience = 20
 patience2 = 10
 num_robots = 10000
+# process = process2
+# prd1 = 30
+process = process1
+prd1 = 40
+range0 = 1
+prop_votes = 0.05
+prop_robots = 0.1
 
 #Rolling
 
+rlts = []
 range0 = 1
-# range0 = len(codelist)-1
-for datai in range(range0,len(codelist)):
+range0 = len(codelist)-1
+# for datai in range(range0,len(codelist)):
+for datai in range(36,len(codelist)):
     #Data Loading
     codes1 = codelist[datai]
     codes0 = codelist[datai-1]
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
-    printlog(date1)
+    printlog([datai,date1])
     codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
     raw = loaddata(date0,codes2try)
     #Code Filtering
@@ -338,25 +447,29 @@ for datai in range(range0,len(codelist)):
         'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
         'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
         }).set_index('code')
-        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
         rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
         rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-        raw = raw[raw['code'].isin(rawsel.code)]
+        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {(rawsel.shape[0])}')
+        raw = raw[raw['code'].isin(rawsel.index)]
     #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
     models = []
     for i in range(len(datasets)):
         model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
         models.append(model)
     votes = roboting(num_robots,models)
-    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
+    np.savez(f'model/vote_{codefile}_{date1}_{note}.npz',votes=votes,raw=raw)
+    rlt = voting(votes,prop_votes,prop_robots)
+    rlt['date'] = date1
+    rlt = rlt.reset_index(drop=True)
+    rlts.append(rlt)
+    rlt = rlt[rlt['index']>5]
+    rlt['share'] = rlt['count']/np.sum(rlt['count'])
+    printlog(rlt)
 
-# Voting
+pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}_{note}.csv')
 
-range0 = 1
-prop_votes = 0.05
-prop_robots = 0.1
+#Voting
 
 rlts = []
 for datai in range(1,len(codelist)):
@@ -365,30 +478,33 @@ for datai in range(1,len(codelist)):
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
     printlog(date1)
-    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
+    model = np.load(f'model/vote_{codefile}_{date1}_{note}.npz',allow_pickle=True)
     votes = model['votes']
     raw = model['raw']
     raw = pd.DataFrame(raw)
     raw.columns = ['date','open','close','high','low','val','code']
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
     rlt = voting(votes,prop_votes,prop_robots)
     rlt['date'] = date1
     rlt = rlt.reset_index(drop=True)
     rlts.append(rlt)
 
-pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
+# pd.concat(trans,axis=0).to_csv('rlt/rlts_jgp.csv')
+
+#Calculation
 
 thres_index = 5
 trans = []
 for rlt in rlts:
+    # rlt = rlt.iloc()[range(10),:]
     rlt = rlt[rlt['index']>thres_index]
-    rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
+    rlt['share'] = rlt['count']/np.sum(rlt['count'])
     trans.append(rlt)
 
 roi = 1
-for i in range(len(rlts)-1):
-    date1 = rlts[i]['date'][0]
-    date2 = rlts[i+1]['date'][0]
+for i in range(len(trans)):
+    date1 = np.unique(trans[i]['date'])
+    date2 = np.unique(trans[i+1]['date'])
     transi = trans[i]
     refi = []
     for codei in transi['code']:
@@ -406,21 +522,55 @@ for i in range(len(rlts)-1):
         refi.columns = ['open0','close0','open1','close1']
     refi.index = transi.index
     transi = pd.concat([transi,refi],axis=1)
+    transi['share'] = transi['count']/np.sum(transi['count'])
     roi *= np.sum(transi.close1/transi.open0*transi.share)
     print(f'{np.unique(transi["date"])}, n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share):.4f}, AccumProfit:{roi:.4f}')
 
 # New Model
 
-prop_votes = 0.05
-prop_robots = 0.1
-thres_index = 5
+datai = 10
+codes1 = codelist[datai]
+codes0 = codelist[datai-1]
+date1 = codes1[0] #buy date
+date0 = codes0[0] #data ending date
+printlog([datai,date1])
+codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
+raw = loaddata(date0,codes2try)
+#Code Filtering
+if codefilter:
+    rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
+    rawsel = pd.DataFrame({
+    'code':rawsel.columns,
+    'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
+    'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
+    }).set_index('code')
+    rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
+    rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
+    printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {(rawsel.shape[0])}')
+    raw = raw[raw['code'].isin(rawsel.index)]
+
+#Modeling
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
+models = []
+for i in range(len(datasets)):
+    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+    models.append(model)
+votes = roboting(num_robots,models)
+np.savez(f'model/vote_{codefile}_{date1}_{note}.npz',votes=votes,raw=raw)
+rlt = voting(votes,prop_votes,prop_robots)
+rlt['date'] = date1
+rlt = rlt.reset_index(drop=True)
+rlts.append(rlt)
+rlt = rlt[rlt['index']>5]
+rlt['share'] = rlt['count']/np.sum(rlt['count'])
+printlog(rlt)
 
 datai = len(codelist)-1
 codes1 = codelist[datai]
 codes0 = codelist[datai-1]
 date1 = codes1[0] #buy date
 date0 = codes0[0] #data ending date
-model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
+model = np.load(f'model/vote_{codefile}_{date1}.npz',allow_pickle=True)
 votes = model['votes']
 raw = model['raw']
 raw = pd.DataFrame(raw)
@@ -429,247 +579,16 @@ datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
 rlt = voting(votes,prop_votes,prop_robots)
 rlt = rlt[rlt['index']>thres_index]
 rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
+
 rlt
+date0 = datelist[(np.asarray(datelist)!=date0).argsort()[0]]
+date5 = datelist[(np.asarray(datelist)!=date0).argsort()[0]-4]
+refi = []
+for codei in rlt['code']:
+    refii = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date5, end_date=date0, adjust="qfq").iloc()[:,2]
+    refi.append(refii[4]/np.mean(refii))
 
-##########################################################################################
-# Modeling with dual codelist
-##########################################################################################
-
-codefile = 'merge2' #merge  2 for non filter
-if codefile=='merge':
-    codefilter = True
-else:
-    codefilter = False
-
-range0 = 1
-# range0 = len(codelist)-1
-
-#Read codelist
-
-qslist = []
-qsdate = []
-jglist = []
-jgdate = []
-
-with open(f'data/codelist_qs.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        qslist.append(line.split(','))
-        qsdate.append(line.split(',')[0])
-
-with open(f'data/codelist_jgp.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        jglist.append(line.split(','))
-        jgdate.append(line.split(',')[0])
-
-jglist = jglist[3:]
-jgdate = jgdate[3:]
-
-codelist = []
-datelist = jgdate
-for i in range(len(jglist)):
-    codelist.append(qslist[i]+jglist[i][1:])
-
-#Parameter
-
-device = torch.device('cuda')
-seeds = [303,777,101,602]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 100000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 10000
-prop_votes = 0.05
-prop_robots = 0.1
-hat_inv = 0.2
-
-#Rolling
-
-for datai in range(range0,len(codelist)):
-    #Data Loading
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata(date0,codes2try)
-    #Code Filtering
-    if codefilter:
-        rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-        rawsel = pd.DataFrame({
-        'code':rawsel.columns,
-        'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-        'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-        }).set_index('code')
-        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-        rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-        rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-        raw = raw[raw['code'].isin(rawsel.code)]
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
-
-# Voting
-
-trans = []
-#Rolling
-for datai in range(range0,len(codelist)):
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date2 = datelist[datai+1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
-    votes = model['votes']
-    raw = model['raw']
-    raw = pd.DataFrame(raw)
-    raw.columns = ['date','open','close','high','low','val','code']
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    rlt = voting(votes,prop_votes,prop_robots)
-    rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-    rlt = rlt[(np.cumsum(rlt['share'])<=1)]
-    rlt = rlt[(rlt['index']>5)]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
-    transi = rlt
-    refi = []
-    for codei in transi['code']:
-        refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]]))
-    refi = pd.DataFrame(np.asarray(refi))
-    if refi.shape[1]==4:
-        refi.columns = ['open0','close0','open1','close1']
-    else: 
-        refi = pd.concat((refi,refi),axis=1)
-        refi.iloc()[:,2] = refi.iloc()[:,1]
-        refi.iloc()[:,3] = refi.iloc()[:,1]
-        refi.columns = ['open0','close0','open1','close1']
-    refi.index = transi.index
-    transi = pd.concat([transi,refi],axis=1)
-    transi['date'] = date1
-    trans.append(transi)
-    printlog(transi)
-    printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
-
-pd.concat(trans,axis=0).to_csv(f'rlt/{codefile}.csv')
-
-roi = 1
-for transi in trans:
-    printlog(np.unique(transi['date']))
-    roi *= np.sum(transi.close1/transi.open0*transi.share)
-    printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
-
-##########################################
-
-jpg = pd.read_csv('rlt/rlts_jgp.csv')
-jpg['model'] = 'jgp'
-qs = pd.read_csv('rlt/rlts_qs.csv')
-qs['model'] = 'qs'
-
-rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
-rlt = rlt[rlt['index']>5]
-rlt = pd.merge(
-    rlt,
-    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
-    on=['date','model']
-)
-date = np.sort(np.unique(rlt['date']))
-rlt = rlt[rlt['date']<20230530].reset_index()
-date = np.append([20230407],date)
-
-def ref(datei,codei):
-    datei2 = date[(date!=datei).argsort()[0]+1]
-    datei1 = date[(date!=datei).argsort()[0]-1]
-    codei = str(codei+1000000)[1:]
-    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
-    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
-
-refs = []
-for i in range(rlt.shape[0]):
-    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
-
-refs = pd.DataFrame(np.asarray(refs))
-refs.columns = ['overnite0','roi']
-rlt = pd.concat((rlt,refs),axis=1)
-
-rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
-rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
-rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
-
-rlt = pd.merge(
-    rlt[rlt['model']=='qs'],
-    rlt[rlt['model']=='jgp'],
-    on='date'
-)
-
-#########################
-
-jpg = pd.read_csv('rlt/rlts_tb.csv')
-jpg['model'] = 'jgp'
-qs = pd.read_csv('rlt/rlts_tbq.csv')
-qs['model'] = 'qs'
-
-rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
-rlt = rlt[rlt['index']>5]
-rlt = pd.merge(
-    rlt,
-    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
-    on=['date','model']
-)
-date = np.sort(np.unique(rlt['date']))
-rlt = rlt[rlt['date']<np.max(rlt['date'])].reset_index()
-date = np.append([20220730],date)
-
-def ref(datei,codei):
-    datei2 = date[(date!=datei).argsort()[0]+1]
-    datei1 = date[(date!=datei).argsort()[0]-1]
-    codei = str(codei+1000000)[1:]
-    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
-    if len(refi)==2:
-        refi = np.append(refi,[refi[1],refi[1]])
-    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
-
-refs = []
-for i in range(rlt.shape[0]):
-    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
-
-refs = pd.DataFrame(np.asarray(refs))
-refs.columns = ['overnite0','roi']
-rlt = pd.concat((rlt,refs),axis=1)
-
-rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
-rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
-rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
-
-rlt = pd.merge(
-    rlt[rlt['model']=='qs'],
-    rlt[rlt['model']=='jgp'],
-    on='date'
-)
-
-out = []
-for i in range(rlt.shape[0]):
-    if rlt['overnite0_x'].iloc()[i] > rlt['overnite0_y'].iloc()[i]:
-        out.append(rlt['roi_x'].iloc()[i])
-    else:
-        out.append(rlt['roi_y'].iloc()[i])
-
-rlt['merge'] = out
-
-np.ravel(np.cumprod(rlt['roi_x']))
-np.ravel(np.cumprod(rlt['roi_y']))
-np.cumprod(out)
-
-
-
+rlt['life'] = refi
+rlt = rlt[rlt['life']>1]
+rlt['share'] = rlt['count']/np.sum(rlt['count'])
+rlt
