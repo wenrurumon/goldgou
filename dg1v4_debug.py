@@ -426,11 +426,11 @@ prop_robots = 0.1
 
 #Rolling
 
-# rlts = []
+rlts = []
 range0 = 1
 range0 = len(codelist)-1
-# for datai in range(range0,len(codelist)):
-for datai in range(1,36):
+for datai in range(range0,len(codelist)):
+# for datai in range(16,36):
     #Data Loading
     codes1 = codelist[datai]
     codes0 = codelist[datai-1]
@@ -471,6 +471,7 @@ pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}_{note}.csv')
 
 #Voting
 
+device = torch.device('cuda')
 rlts = []
 for datai in range(1,len(codelist)):
     codes1 = codelist[datai]
@@ -478,26 +479,30 @@ for datai in range(1,len(codelist)):
     date1 = codes1[0] #buy date
     date0 = codes0[0] #data ending date
     printlog(date1)
-    model = np.load(f'model/vote_{codefile}_{date1}_{note}.npz',allow_pickle=True)
-    votes = model['votes']
-    raw = model['raw']
-    raw = pd.DataFrame(raw)
-    raw.columns = ['date','open','close','high','low','val','code']
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
-    rlt = voting(votes,prop_votes,prop_robots)
-    rlt['date'] = date1
-    rlt = rlt.reset_index(drop=True)
-    rlts.append(rlt)
+    if os.path.isfile(f'model/vote_{codefile}_{date1}_{note}.npz'):
+        model = np.load(f'model/vote_{codefile}_{date1}_{note}.npz',allow_pickle=True)
+        votes = model['votes']
+        raw = model['raw']
+        raw = pd.DataFrame(raw)
+        raw.columns = ['date','open','close','high','low','val','code']
+        datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
+        rlt = voting(votes,prop_votes,prop_robots)
+        rlt['date'] = date1
+        rlt = rlt.reset_index(drop=True)
+        rlts.append(rlt)
+    else:
+        break
 
-# pd.concat(trans,axis=0).to_csv('rlt/rlts_jgp.csv')
+pd.concat(trans,axis=0).to_csv('rlt/rlts_jgp3.csv')
 
 #Calculation
 
-thres_index = 10
+thres_index = 5
 hat_inv = 0.2
 trans = []
 for rlt in rlts:
-    # rlt = rlt[rlt['index']>thres_index]
+    rlt = rlt[rlt['index']>thres_index]
+    # rlt = rlt[rlt['index']>np.quantile(rlt['index'],0.95)]
     # rlt['share'] = rlt['count']/np.sum(rlt['count'])
     rlt['share'] = rlt['count']/(num_robots*prop_robots) * hat_inv
     rlt = rlt[np.cumsum(rlt['share'])<=1]
@@ -507,7 +512,8 @@ for rlt in rlts:
 roi = 1
 for i in range(len(trans)):
     date1 = np.unique(trans[i]['date'])
-    date2 = np.unique(trans[i+1]['date'])
+    # date2 = np.unique(trans[i+1]['date'])
+    date2 = datelist[i+2]
     transi = trans[i]
     refi = []
     for codei in transi['code']:
