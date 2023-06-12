@@ -8,6 +8,7 @@ import torch.optim as optim
 import os
 from sklearn.preprocessing import StandardScaler
 import datetime
+from datetime import timedelta
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from scipy.stats import rankdata
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -18,15 +19,12 @@ from collections import Counter
 import math
 import akshare as ak
 from scipy.stats import binom_test
+import statsmodels.api as sm
 
 def printlog(x):
     print(datetime.datetime.now(), x)
 
 def loaddata(date0,codes):
-    codes2 = []
-    for i in range(len(codes)):
-        codes2.append(codes[i].replace('\n',''))
-    codes = np.unique(codes2)
     raw = []
     for codei in codes:
         rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq").iloc()[:,range(7)]
@@ -119,12 +117,15 @@ def process1(raw,prd1,seeds):
     X2 = torch.tensor(X2).float().to(device)
     datasets = []
     for seed in seeds:
-        np.random.seed(seed)
-        samples = np.random.permutation(np.ravel(range(X.shape[0])))
-        samples = np.ravel((samples%5).tolist())
-        for s in range(5):
-            X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
-            datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+        X_train, X_test, Y_train, Y_test, Z_train, Z_test = train_test_split(X, Y, Z, test_size=0.3, random_state=seed)
+        datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+    # for seed in seeds:
+    #     np.random.seed(seed)
+    #     samples = np.random.permutation(np.ravel(range(X.shape[0])))
+    #     samples = np.ravel((samples%5).tolist())
+    #     for s in range(5):
+    #         X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+    #         datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
     life = []
     for i in range(10, closepvt.shape[0]):
         data = closepvt[(i-9):(i+1), :]
@@ -168,18 +169,21 @@ def process2(raw,prd1,seeds):
     for i in range(highpvt.shape[0]-(prd1-1)):
         xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
         Xhigh.append(np.ravel(xi.T))
     Xhigh = np.asarray(Xhigh)
     Xlow = []
     for i in range(lowpvt.shape[0]-(prd1-1)):
         xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
         Xlow.append(np.ravel(xi.T))
     Xlow = np.asarray(Xlow)
     Xopen = []
     for i in range(highpvt.shape[0]-(prd1-1)):
         xi = openpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
         xi = np.nan_to_num(xi,nan=-1)
+        xi = xi[-5:,:]
         Xopen.append(np.ravel(xi.T))
     Xopen = np.asarray(Xopen)
     Xval = []
@@ -214,12 +218,15 @@ def process2(raw,prd1,seeds):
     X2 = torch.tensor(X2).float().to(device)
     datasets = []
     for seed in seeds:
-        np.random.seed(seed)
-        samples = np.random.permutation(np.ravel(range(X.shape[0])))
-        samples = np.ravel((samples%5).tolist())
-        for s in range(5):
-            X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
-            datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+        X_train, X_test, Y_train, Y_test, Z_train, Z_test = train_test_split(X, Y, Z, test_size=0.3, random_state=seed)
+        datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+    # for seed in seeds:
+    #     np.random.seed(seed)
+    #     samples = np.random.permutation(np.ravel(range(X.shape[0])))
+    #     samples = np.ravel((samples%5).tolist())
+    #     for s in range(5):
+    #         X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
+    #         datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
     life = []
     for i in range(10, closepvt.shape[0]):
         data = closepvt[(i-9):(i+1), :]
@@ -295,7 +302,7 @@ def train(modeli, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, p
             lossz = criterion(ztr, zhat)
             lossy = criterion(ytr, yhat)
             # wwz = epoch/1000
-            wwz = 0.5
+            wwz = 1
             wz = lossz / (wwz*lossz+lossy)
             wy = 1-wz
             loss = wy*lossy + wz*lossz + l2_loss
@@ -307,8 +314,8 @@ def train(modeli, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, p
             vlossz = criterion(Z_test, zhate)
             vlossy = criterion(Y_test, yhate)
             vloss = wy*vlossy + wz*vlossz + l2_losse
-        # if epoch==0:
-            # printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+        if epoch==0:
+            printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
         if epoch>0:
             if vloss < best_loss*early_tol:
                 if vloss < best_loss:
@@ -345,7 +352,8 @@ def roboting(num_robots,models):
             torch.manual_seed(s)
             Y2, Z2, _ = modeli(X2)
             Z2 = Zscaler.inverse_transform(Z2.cpu().detach().numpy())
-            votei.append(((-Z2).argsort(axis=1)))
+            votei.append(Z2)
+            # votei.append(((-Z2).argsort(axis=1)))
         votes.append(np.asarray(votei))
     return(np.asarray(votes))
 
@@ -380,393 +388,270 @@ def voting(votes,prop_votes,prop_robots):
     rlt['code'] = rlt.index
     return(rlt)
 
+class updatecodes:
+    def __init__(self):
+        jg_date = []
+        jg_codes = []
+        with open(f'data/code_jg.txt','r') as file:
+            lines = file.readlines()
+            for line in lines:
+                jg_date.append(line.split(',')[0])
+                jg_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+        qs_date = []
+        qs_codes = []
+        with open(f'data/code_qs.txt','r') as file:
+            lines = file.readlines()
+            for line in lines:
+                qs_date.append(line.split(',')[0])
+                qs_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+        jg_date = np.asarray(jg_date)
+        qs_date = np.asarray(qs_date)
+        jg_codes = np.asarray(jg_codes)
+        qs_codes = np.asarray(qs_codes)
+        self.jg_date = jg_date
+        self.jg_codes = jg_codes
+        self.qs_date = qs_date
+        self.qs_codes = qs_codes
+        self.tradedates = [d.strftime('%Y%m%d') for d in np.ravel(ak.tool_trade_date_hist_sina())]
+    # def jgdate(self):
+    #     return self.jg_date
+    # def jgcodes(self):
+    #     return self.jg_codes
+    # def qsdate(self):
+    #     return self.qs_date
+    # def qscodes(self):
+    #     return self.qs_codes
+    def getdates(self,date0):
+        date1 = (np.asarray(self.tradedates)!=str(date0)).argsort()[0]
+        return(np.asarray(self.tradedates)[range(date1,date1+3)].tolist())
+    def getcodes(self,datei):
+        raws = []
+        raws.append(self.jg_codes[self.jg_date==str(datei)].tolist()[0].split(','))
+        raws.append(self.qs_codes[self.qs_date==str(datei)].tolist()[0].split(','))
+        raws = dict(zip(['jg','qs'],raws))
+        return(raws)
+
 ##########################################################################################
-# Modeling with one codelist
+# Rolling
 ##########################################################################################
-
-codefile = 'qs2'
-codefilter = False
-
-#Read codelist
-
-codelist = []
-datelist = []
-with open(f'data/code_{codefile}.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        codelist.append(line.split(','))
-        datelist.append(line.split(',')[0])
 
 #Parameter
 
+note = 'dg0'
+codelist = updatecodes()
 device = torch.device('cuda')
-seeds = [303,777,101,602]
+seeds = [303,101,602,603,777]
 hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
 l2_reg = 0.01
-num_epochs = 100000
+num_epochs = 10000
 lr = 0.001
 early_tol = 1.1
 patience = 20
 patience2 = 10
-num_robots = 10000
-process = process2
-prd1 = 10
+num_robots = 2000
+process = process1
+prd1 = 40
+range0 = 1
+prop_votes = 0.05
+prop_robots = 0.1
 
-#Rolling
-
-# range0 = 1
-range0 = len(codelist)-1
-for datai in range(range0,len(codelist)):
-    #Data Loading
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata(date0,codes2try)
-    #Code Filtering
-    if codefilter:
-        rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-        rawsel = pd.DataFrame({
-        'code':rawsel.columns,
-        'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-        'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-        }).set_index('code')
-        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-        rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-        rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-        raw = raw[raw['code'].isin(rawsel.code)]
+rlts = []
+# for date0 in codelist.tradedates[7925:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[7886:7925]:    
+    #Download Data
+    date0,date1,date2 = codelist.getdates(date0)
+    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
+    raw = loaddata(date0,codes)
     #Modeling
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
     models = []
     for i in range(len(datasets)):
         model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
         models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
-
-# Voting
-
-range0 = 1
-prop_votes = 0.05
-prop_robots = 0.1
-
-rlts = []
-for datai in range(1,len(codelist)):
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
-    votes = model['votes']
-    raw = model['raw']
-    raw = pd.DataFrame(raw)
-    raw.columns = ['date','open','close','high','low','val','code']
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    rlt = voting(votes,prop_votes,prop_robots)
+    #Roboting
+    votes = roboting(num_robots*len(models),models)
+    np.savez(f'model/{note}_{date1}.npz',votes=votes)
+    #Voting
+    votes = np.concatenate(votes,axis=0)
+    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
+    pf2test = (pf2test-1)/2+pf2test 
+    rois = []
+    fvotes = []
+    for i in range(votes.shape[0]):
+        votesi = votes[i]
+        votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+        rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
+        fvotes.append(votesi[-1,:])
+    fvotes = np.asarray(fvotes)
+    rois = (np.asarray(rois))
+    w = np.asarray([1,2,3,4,5]).reshape(1,5)
+    w = w/np.sum(w)
+    rois = ((rois*w).sum(axis=1))
+    rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
+    rlt = pd.DataFrame({'code':raws['close'].columns,
+        'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+        'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+    rlt['index'] = rlt['count']/np.mean(rlt['count'])
+    rlt = rlt[rlt['count']>0]
+    #Validation
+    refs = []
+    for codei in rlt['code']:
+        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
+        if(len(refi)==0):
+            refs.append(np.nan)
+        else:
+            refi = np.ravel(refi.iloc()[:,range(1,3)])
+            refs.append(refi[len(refi)-1]/refi[0])
+    rlt['roi'] = refs
+    rlt = rlt[rlt['index']>5]
+    rlt['share'] = rlt['count']/np.sum(rlt['count'])
     rlt['date'] = date1
-    rlt = rlt.reset_index(drop=True)
+    print(np.sum(rlt['share']*rlt['roi']))
+    print(rlt)
     rlts.append(rlt)
 
-pd.concat(rlts,axis=0).to_csv(f'rlt/rlts_{codefile}.csv')
+#Validation
 
-thres_index = 5
-trans = []
-for rlt in rlts:
-    rlt = rlt[rlt['index']>thres_index]
-    rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
-    trans.append(rlt)
+froi = 1
+frlts = []
+for date0 in codelist.tradedates[7886:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+    #Download Data
+    date0,date1,date2 = codelist.getdates(date0)
+    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
+    raw = loaddata(date0,codes)
+    #Modeling
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
+    n = 2000
+    votes = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)['votes']
+    votes = votes[:,range(n),:,:]
+    votes = np.concatenate(votes,axis=0)
+    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
+    pf2test = (pf2test-1)/2+pf2test 
+    rois = []
+    fvotes = []
+    for i in range(votes.shape[0]):
+        votesi = votes[i]
+        votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+        rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
+        fvotes.append(votesi[-1,:])
+    fvotes = np.asarray(fvotes)
+    rois = (np.asarray(rois))
+    w = np.asarray([1,2,3,4,5]).reshape(1,5)
+    w = w/np.sum(w)
+    rois = ((rois*w).sum(axis=1))
+    rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
+    rlt = pd.DataFrame({'code':raws['close'].columns,
+        'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+        'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+    #Validation
+    refs = []
+    for codei in rlt['code']:
+        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
+        if(len(refi)==0):
+            refs.append(np.nan)
+        else:
+            refi = np.ravel(refi.iloc()[:,range(1,3)])
+            refs.append(refi[len(refi)-1]/refi[0])
+    rlt['roi'] = refs
+    rlt['date'] = date1
+    temp = rlt[rlt['index']>1.5]
+    temp['share'] = temp['count']/np.sum(temp['count'])
+    froi *= np.sum(temp['share']*temp['roi'])
+    print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
+    frlts.append(rlt)
 
-roi = 1
-for i in range(len(rlts)-1):
-    date1 = rlts[i]['date'][0]
-    date2 = rlts[i+1]['date'][0]
-    transi = trans[i]
-    refi = []
-    for codei in transi['code']:
-        refii = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]])
-        if len(refii)==2:
-            refii = np.append(refii,[refii[1],refii[1]])
-        refi.append(refii)
-    refi = pd.DataFrame(np.asarray(refi))
-    if refi.shape[1]==4:
-        refi.columns = ['open0','close0','open1','close1']
-    else: 
-        refi = pd.concat((refi,refi),axis=1)
-        refi.iloc()[:,2] = refi.iloc()[:,1]
-        refi.iloc()[:,3] = refi.iloc()[:,1]
-        refi.columns = ['open0','close0','open1','close1']
-    refi.index = transi.index
-    transi = pd.concat([transi,refi],axis=1)
-    roi *= np.sum(transi.close1/transi.open0*transi.share)
-    print(f'{np.unique(transi["date"])}, n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share):.4f}, AccumProfit:{roi:.4f}')
-
-# New Model
-
-prop_votes = 0.05
-prop_robots = 0.1
-thres_index = 5
-
-datai = len(codelist)-1
-codes1 = codelist[datai]
-codes0 = codelist[datai-1]
-date1 = codes1[0] #buy date
-date0 = codes0[0] #data ending date
-model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
-votes = model['votes']
-raw = model['raw']
-raw = pd.DataFrame(raw)
-raw.columns = ['date','open','close','high','low','val','code']
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-rlt = voting(votes,prop_votes,prop_robots)
-rlt = rlt[rlt['index']>thres_index]
-rlt['share'] = rlt['count'] / np.sum(rlt['count']) 
-rlt
+frlts = pd.concat(frlts,axis=0)
+frlts.to_csv('test.csv')
+rlt = frlts[frlts['index']>5]
+rlt = pd.merge(rlt,
+    rlt.groupby(['n', 'date'])['count'].sum().reset_index().rename(columns={'count':'tt'}),
+    on=['n','date'])
+rlt['share'] = rlt['count']/rlt['tt']
+rlt = rlt.groupby(['n', 'date'])['roi', 'share'].apply(lambda x: (x['roi'] * x['share']).sum()).reset_index(name='roi')
+rlt = pd.pivot_table(rlt, values=['roi'], index=['date'], columns=['n'])
+rlt.iloc()[range(rlt.shape[0]-1),:].prod(axis=0)
 
 ##########################################################################################
-# Modeling with dual codelist
+# Pipeline
 ##########################################################################################
-
-codefile = 'merge2' #merge  2 for non filter
-if codefile=='merge':
-    codefilter = True
-else:
-    codefilter = False
-
-range0 = 1
-# range0 = len(codelist)-1
-
-#Read codelist
-
-qslist = []
-qsdate = []
-jglist = []
-jgdate = []
-
-with open(f'data/codelist_qs.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        qslist.append(line.split(','))
-        qsdate.append(line.split(',')[0])
-
-with open(f'data/codelist_jgp.txt', 'r') as file:
-    lines = file.readlines()
-    for line in lines:
-        jglist.append(line.split(','))
-        jgdate.append(line.split(',')[0])
-
-jglist = jglist[3:]
-jgdate = jgdate[3:]
-
-codelist = []
-datelist = jgdate
-for i in range(len(jglist)):
-    codelist.append(qslist[i]+jglist[i][1:])
 
 #Parameter
-
+note = 'dg0'
+codelist = updatecodes()
 device = torch.device('cuda')
-seeds = [303,777,101,602]
+seeds = [303,101,602,603,777]
 hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
 l2_reg = 0.01
-num_epochs = 100000
+num_epochs = 10000
 lr = 0.001
 early_tol = 1.1
 patience = 20
 patience2 = 10
-num_robots = 10000
+num_robots = 2000
+process = process1
+prd1 = 40
+range0 = 1
 prop_votes = 0.05
 prop_robots = 0.1
-hat_inv = 0.2
 
-#Rolling
+#Download Data
+date0 = '20230612'
+date0,date1,date2 = codelist.getdates(date0)
+print(f'know @{date0}, buy @{date1}, valid @{date2}')
+codes = list(set([elem for sublist in list(codelist.getcodes(date0).values()) for elem in sublist]))
+raw = loaddata(date0,codes)
 
-for datai in range(range0,len(codelist)):
-    #Data Loading
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    printlog(date1)
-    codes2try = np.unique(np.ravel(np.append(codes1[1:],codes0[1:])))
-    raw = loaddata(date0,codes2try)
-    #Code Filtering
-    if codefilter:
-        rawsel = pd.pivot_table(raw, values='close', index=['date'], columns=['code'])
-        rawsel = pd.DataFrame({
-        'code':rawsel.columns,
-        'closegr':rawsel.iloc()[rawsel.shape[0]-1,:]/rawsel.iloc()[rawsel.shape[0]-6,:],
-        'lifegr':rawsel.iloc()[range(rawsel.shape[0]-5,rawsel.shape[0]),:].mean(axis=0)/rawsel.iloc()[range(rawsel.shape[0]-10,rawsel.shape[0]-5),:].mean(axis=0)
-        }).set_index('code')
-        rawsel = pd.merge(rawsel,ak.stock_info_a_code_name(),left_index=True, right_on='code')
-        rawsel = rawsel[(rawsel.closegr > np.nanquantile(rawsel.closegr,0.5))&(rawsel.lifegr > np.nanquantile(rawsel.lifegr,0.5))]
-        rawsel['score'] = rawsel['lifegr'] * rawsel['closegr']
-        printlog(f'Original #Codes: {len(codes2try)}, Filtered #Codes: {len(rawsel.code)}')
-        raw = raw[raw['code'].isin(rawsel.code)]
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    votes = roboting(num_robots,models)
-    np.savez(f'rlt/vote_{codefile}_{date1}.npz',votes=votes,raw=raw)
-
-# Voting
-
-trans = []
-#Rolling
-for datai in range(range0,len(codelist)):
-    codes1 = codelist[datai]
-    codes0 = codelist[datai-1]
-    date2 = datelist[datai+1]
-    date1 = codes1[0] #buy date
-    date0 = codes0[0] #data ending date
-    model = np.load(f'rlt/vote_{codefile}_{date1}.npz',allow_pickle=True)
-    votes = model['votes']
-    raw = model['raw']
-    raw = pd.DataFrame(raw)
-    raw.columns = ['date','open','close','high','low','val','code']
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,40,seeds)
-    rlt = voting(votes,prop_votes,prop_robots)
-    rlt['share'] = rlt['count']/(np.prod(votes.shape[0:2])*prop_robots)*hat_inv
-    rlt = rlt[(np.cumsum(rlt['share'])<=1)]
-    rlt = rlt[(rlt['index']>5)]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
-    transi = rlt
-    refi = []
-    for codei in transi['code']:
-        refi.append(np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq").iloc()[:,[1,2]]))
-    refi = pd.DataFrame(np.asarray(refi))
-    if refi.shape[1]==4:
-        refi.columns = ['open0','close0','open1','close1']
-    else: 
-        refi = pd.concat((refi,refi),axis=1)
-        refi.iloc()[:,2] = refi.iloc()[:,1]
-        refi.iloc()[:,3] = refi.iloc()[:,1]
-        refi.columns = ['open0','close0','open1','close1']
-    refi.index = transi.index
-    transi = pd.concat([transi,refi],axis=1)
-    transi['date'] = date1
-    trans.append(transi)
-    printlog(transi)
-    printlog(f'GGtrade:{np.sum(transi.open1/transi.open0*transi.share)},ApeTrade:{np.sum(transi.close1/transi.open0*transi.share)}')
-
-pd.concat(trans,axis=0).to_csv(f'rlt/{codefile}.csv')
-
-roi = 1
-for transi in trans:
-    printlog(np.unique(transi['date']))
-    roi *= np.sum(transi.close1/transi.open0*transi.share)
-    printlog(f'n:{transi.shape[0]}, Profit:{np.sum(transi.close1/transi.open0*transi.share)}, AccumProfit:{roi}')    
-
-##########################################
-
-jpg = pd.read_csv('rlt/rlts_jgp.csv')
-jpg['model'] = 'jgp'
-qs = pd.read_csv('rlt/rlts_qs.csv')
-qs['model'] = 'qs'
-
-rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
-rlt = rlt[rlt['index']>5]
-rlt = pd.merge(
-    rlt,
-    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
-    on=['date','model']
-)
-date = np.sort(np.unique(rlt['date']))
-rlt = rlt[rlt['date']<20230530].reset_index()
-date = np.append([20230407],date)
-
-def ref(datei,codei):
-    datei2 = date[(date!=datei).argsort()[0]+1]
-    datei1 = date[(date!=datei).argsort()[0]-1]
-    codei = str(codei+1000000)[1:]
-    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
-    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
-
+#Modeling
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
+models = []
+for i in range(len(datasets)):
+    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+    models.append(model)
+#Roboting
+votes = roboting(num_robots*len(models),models)
+np.savez(f'model/{note}_{date1}.npz',votes=votes)
+#Voting
+votes = np.concatenate(votes,axis=0)
+pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
+pf2test = (pf2test-1)/2+pf2test 
+rois = []
+fvotes = []
+for i in range(votes.shape[0]):
+    votesi = votes[i]
+    votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+    rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
+    fvotes.append(votesi[-1,:])
+fvotes = np.asarray(fvotes)
+rois = (np.asarray(rois))
+w = np.asarray([1,2,3,4,5]).reshape(1,5)
+w = w/np.sum(w)
+rois = ((rois*w).sum(axis=1))
+rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
+rlt = pd.DataFrame({'code':raws['close'].columns,
+    'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+    'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+rlt['index'] = rlt['count']/np.mean(rlt['count'])
+rlt = rlt[rlt['count']>0]
+rlts.append(rlt)
+#Validation
 refs = []
-for i in range(rlt.shape[0]):
-    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
-
-refs = pd.DataFrame(np.asarray(refs))
-refs.columns = ['overnite0','roi']
-rlt = pd.concat((rlt,refs),axis=1)
-
-rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
-rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
-rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
-
-rlt = pd.merge(
-    rlt[rlt['model']=='qs'],
-    rlt[rlt['model']=='jgp'],
-    on='date'
-)
-
-#########################
-
-jpg = pd.read_csv('rlt/rlts_tb.csv')
-jpg['model'] = 'jgp'
-qs = pd.read_csv('rlt/rlts_tbq.csv')
-qs['model'] = 'qs'
-
-rlt = pd.concat((jpg,qs),axis=0).iloc()[:,1:]
-rlt = rlt[rlt['index']>5]
-rlt = pd.merge(
-    rlt,
-    rlt.groupby(['date','model']).agg({'count':'sum'}).rename(columns={'count':'share'}),
-    on=['date','model']
-)
-date = np.sort(np.unique(rlt['date']))
-rlt = rlt[rlt['date']<np.max(rlt['date'])].reset_index()
-date = np.append([20220730],date)
-
-def ref(datei,codei):
-    datei2 = date[(date!=datei).argsort()[0]+1]
-    datei1 = date[(date!=datei).argsort()[0]-1]
-    codei = str(codei+1000000)[1:]
-    refi = np.ravel(ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=datei1, end_date=datei2, adjust="qfq").iloc()[:,[1,2]])
-    if len(refi)==2:
-        refi = np.append(refi,[refi[1],refi[1]])
-    return([refi[2]/refi[1],refi[len(refi)-1]/refi[2]])
-
-refs = []
-for i in range(rlt.shape[0]):
-    refs.append(ref(rlt['date'].iloc()[i],rlt['code'].iloc()[i]))
-
-refs = pd.DataFrame(np.asarray(refs))
-refs.columns = ['overnite0','roi']
-rlt = pd.concat((rlt,refs),axis=1)
-
-rlt['roi'] = rlt['count']/rlt['share'] * rlt['roi']
-rlt['overnite0'] = rlt['count']/rlt['share'] * rlt['overnite0']
-rlt = rlt.groupby(['date', 'model']).agg({'roi': 'sum','overnite0': 'sum'}).reset_index()
-
-rlt = pd.merge(
-    rlt[rlt['model']=='qs'],
-    rlt[rlt['model']=='jgp'],
-    on='date'
-)
-
-out = []
-for i in range(rlt.shape[0]):
-    if rlt['overnite0_x'].iloc()[i] > rlt['overnite0_y'].iloc()[i]:
-        out.append(rlt['roi_x'].iloc()[i])
+for codei in rlt['code']:
+    refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
+    if(len(refi)==0):
+        refs.append(np.nan)
     else:
-        out.append(rlt['roi_y'].iloc()[i])
-
-rlt['merge'] = out
-
-np.ravel(np.cumprod(rlt['roi_x']))
-np.ravel(np.cumprod(rlt['roi_y']))
-np.cumprod(out)
-
-
-
+        refi = np.ravel(refi.iloc()[:,range(1,3)])
+        refs.append(refi[len(refi)-1]/refi[0])
+rlt['roi'] = refs
+rlt = rlt[rlt['index']>5]
+rlt['share'] = rlt['count']/np.sum(rlt['count'])
+rlt['date'] = date1
+print(np.sum(rlt['share']*rlt['roi']))
+print(rlt)
