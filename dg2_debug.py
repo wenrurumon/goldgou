@@ -458,8 +458,9 @@ prop_votes = 0.05
 prop_robots = 0.1
 
 rlts = []
+today = (np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]
 # for date0 in codelist.tradedates[7925:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-for date0 in codelist.tradedates[7886:7925]:    
+for date0 in codelist.tradedates[(today-1):today]:    
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -494,7 +495,7 @@ for date0 in codelist.tradedates[7886:7925]:
     rlt = pd.DataFrame({'code':raws['close'].columns,
         'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
         'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-    rlt['index'] = rlt['count']/np.mean(rlt['count'])
+    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
     rlt = rlt[rlt['count']>0]
     #Validation
     refs = []
@@ -506,12 +507,13 @@ for date0 in codelist.tradedates[7886:7925]:
             refi = np.ravel(refi.iloc()[:,range(1,3)])
             refs.append(refi[len(refi)-1]/refi[0])
     rlt['roi'] = refs
-    rlt = rlt[rlt['index']>5]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
     rlt['date'] = date1
+    rlt = rlt[rlt['index']>1.5]
+    rlts.append(rlt)
+    rlt['share'] = rlt['count']/np.sum(rlt['count'])
     print(np.sum(rlt['share']*rlt['roi']))
     print(rlt)
-    rlts.append(rlt)
+
 
 #Validation
 
