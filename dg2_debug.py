@@ -508,12 +508,11 @@ for date0 in codelist.tradedates[(today-1):today]:
             refs.append(refi[len(refi)-1]/refi[0])
     rlt['roi'] = refs
     rlt['date'] = date1
-    rlt = rlt[rlt['index']>1.5]
     rlts.append(rlt)
+    rlt = rlt[rlt['index']>1.5]
     rlt['share'] = rlt['count']/np.sum(rlt['count'])
     print(np.sum(rlt['share']*rlt['roi']))
     print(rlt)
-
 
 #Validation
 
