@@ -440,7 +440,7 @@ class updatecodes:
 note = 'dg0'
 codelist = updatecodes()
 device = torch.device('cuda')
-seeds = [303,101,602,603,777]
+seeds = [303,101,602,603,4,7,10,11,14,49]
 hidden_dim = 1024
 latent_dim = 128
 dropout_rate = 0.5
@@ -450,17 +450,17 @@ lr = 0.001
 early_tol = 1.1
 patience = 20
 patience2 = 10
-num_robots = 2000
+num_robots = 1000
 process = process1
 prd1 = 40
 range0 = 1
 prop_votes = 0.05
 prop_robots = 0.1
 
+froi = 1
 rlts = []
-today = (np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]
-# for date0 in codelist.tradedates[7925:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-for date0 in codelist.tradedates[(today-1):today]:    
+# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -508,30 +508,150 @@ for date0 in codelist.tradedates[(today-1):today]:
             refs.append(refi[len(refi)-1]/refi[0])
     rlt['roi'] = refs
     rlt['date'] = date1
+    if np.ravel(rlt['index'])[3]<=1.5:
+        threshold = np.ravel(rlt['index'])[3]
+    elif np.ravel(rlt['index'])[6]>=1.5:
+        threshold = np.ravel(rlt['index'])[5]
+    else:
+        threshold = 1.5
+    temp = rlt[rlt['index']>=threshold]
+    temp['share'] = temp['count']/np.sum(temp['count'])
+    froi *= np.sum(temp['share']*temp['roi'])
+    print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
     rlts.append(rlt)
-    rlt = rlt[rlt['index']>1.5]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
-    print(np.sum(rlt['share']*rlt['roi']))
-    print(rlt)
 
 #Validation
 
 froi = 1
 frlts = []
-for date0 in codelist.tradedates[7886:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
     codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
     raw = loaddata(date0,codes)
-    #Modeling
+    #Roboting
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
-    n = 2000
-    votes = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)['votes']
-    votes = votes[:,range(n),:,:]
-    votes = np.concatenate(votes,axis=0)
+    votess = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)['votes']
     pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
     pf2test = (pf2test-1)/2+pf2test 
+    #Voting
+    rlts = []
+    for v in range(votess.shape[0]):
+        votes = votess[v,:,:,:]
+        rois = []
+        fvotes = []
+        for i in range(votes.shape[0]):
+            votesi = votes[i]
+            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+            rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
+            fvotes.append(votesi[-1,:])
+        fvotes = np.asarray(fvotes)
+        rois = (np.asarray(rois))
+        w = np.asarray([1,2,3,4,5]).reshape(1,5)
+        w = w/np.sum(w)
+        rois = ((rois*w).sum(axis=1))
+        rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
+        rlt = pd.DataFrame({'code':raws['close'].columns,
+            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+        rlt['date'] = date1
+        rlts.append(rlt)
+    threshold = np.quantile(pd.concat(rlts,axis=0).groupby('code').aggregate(count=('count','sum'))['count'],0.95)
+    rlt = pd.concat(rlts,axis=0).groupby('code').agg(count=('count', 'sum'), robot=('index', lambda x: sum(x > 1.5))).reset_index().sort_values('count',ascending=False)
+    rlt['index'] = rlt['count']/threshold
+    rlt['date'] = date1
+    # votes = np.concatenate(votess,axis=0)
+    # rois = []
+    # fvotes = []
+    # for i in range(votes.shape[0]):
+    #     votesi = votes[i]
+    #     votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+    #     rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
+    #     fvotes.append(votesi[-1,:])
+    # fvotes = np.asarray(fvotes)
+    # rois = (np.asarray(rois))
+    # w = np.asarray([1,2,3,4,5]).reshape(1,5)
+    # w = w/np.sum(w)
+    # rois = ((rois*w).sum(axis=1))
+    # rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
+    # rlt = pd.DataFrame({'code':raws['close'].columns,
+    #     'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+    #     'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+    # rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+    # rlt = rlt[rlt['count']>0]
+    # rlt['date'] = date1
+    #Validation
+    refs = []
+    for codei in rlt['code']:
+        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
+        if(len(refi)==0):
+            refs.append(np.nan)
+        else:
+            refi = np.ravel(refi.iloc()[:,range(1,3)])
+            refs.append(refi[len(refi)-1]/refi[0])
+    rlt['roi'] = refs
+    frlts.append(rlt)
+    #Print
+    if np.ravel(rlt['index'])[3]<=1.5:
+        threshold = np.ravel(rlt['index'])[3]
+    elif np.ravel(rlt['index'])[6]>=1.5:
+        threshold = np.ravel(rlt['index'])[5]
+    else:
+        threshold = 1.5
+    temp = rlt[rlt['index']>=threshold]
+    # temp = rlt[rlt['robot']>=2]
+    temp['share'] = temp['count']/np.sum(temp['count'])
+    froi *= np.sum(temp['share']*temp['roi'])
+    print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
+
+##########################################################################################
+# Pipeline
+##########################################################################################
+
+note = 'dg0'
+codelist = updatecodes()
+device = torch.device('cuda')
+seeds = [303,101,602,603,777,4,7,10,11,14,8,24,23,1,3]
+hidden_dim = 1024
+latent_dim = 128
+dropout_rate = 0.5
+l2_reg = 0.01
+num_epochs = 10000
+lr = 0.001
+early_tol = 1.1
+patience = 20
+patience2 = 10
+num_robots = 1000
+process = process1
+prd1 = 40
+range0 = 1
+prop_votes = 0.05
+prop_robots = 0.1
+
+date0 = codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]]
+#Download Data
+date0,date1,date2 = codelist.getdates(date0)
+print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
+raw = loaddata(date0,codes)
+#Modeling
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
+models = []
+for i in range(len(datasets)):
+    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+    models.append(model)
+
+#Roboting
+votess = roboting(num_robots*len(models),models)
+pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
+pf2test = (pf2test-1)/2+pf2test 
+
+#Voting
+rlts = []
+for v in range(votess.shape[0]):
+    votes = votess[v,:,:,:]
     rois = []
     fvotes = []
     for i in range(votes.shape[0]):
@@ -549,110 +669,12 @@ for date0 in codelist.tradedates[7886:(np.asarray(codelist.tradedates)!=codelist
         'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
         'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
     rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-    #Validation
-    refs = []
-    for codei in rlt['code']:
-        refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
-        if(len(refi)==0):
-            refs.append(np.nan)
-        else:
-            refi = np.ravel(refi.iloc()[:,range(1,3)])
-            refs.append(refi[len(refi)-1]/refi[0])
-    rlt['roi'] = refs
     rlt['date'] = date1
-    temp = rlt[rlt['index']>1.5]
-    temp['share'] = temp['count']/np.sum(temp['count'])
-    froi *= np.sum(temp['share']*temp['roi'])
-    print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
-    frlts.append(rlt)
+    rlts.append(rlt)
 
-frlts = pd.concat(frlts,axis=0)
-frlts.to_csv('test.csv')
-rlt = frlts[frlts['index']>5]
-rlt = pd.merge(rlt,
-    rlt.groupby(['n', 'date'])['count'].sum().reset_index().rename(columns={'count':'tt'}),
-    on=['n','date'])
-rlt['share'] = rlt['count']/rlt['tt']
-rlt = rlt.groupby(['n', 'date'])['roi', 'share'].apply(lambda x: (x['roi'] * x['share']).sum()).reset_index(name='roi')
-rlt = pd.pivot_table(rlt, values=['roi'], index=['date'], columns=['n'])
-rlt.iloc()[range(rlt.shape[0]-1),:].prod(axis=0)
-
-##########################################################################################
-# Pipeline
-##########################################################################################
-
-#Parameter
-note = 'dg0'
-codelist = updatecodes()
-device = torch.device('cuda')
-seeds = [303,101,602,603,777]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 2000
-process = process1
-prd1 = 40
-range0 = 1
-prop_votes = 0.05
-prop_robots = 0.1
-
-#Download Data
-date0 = '20230612'
-date0,date1,date2 = codelist.getdates(date0)
-print(f'know @{date0}, buy @{date1}, valid @{date2}')
-codes = list(set([elem for sublist in list(codelist.getcodes(date0).values()) for elem in sublist]))
-raw = loaddata(date0,codes)
-
-#Modeling
-datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,seeds)
-models = []
-for i in range(len(datasets)):
-    model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-    models.append(model)
-#Roboting
-votes = roboting(num_robots*len(models),models)
-np.savez(f'model/{note}_{date1}.npz',votes=votes)
-#Voting
-votes = np.concatenate(votes,axis=0)
-pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
-pf2test = (pf2test-1)/2+pf2test 
-rois = []
-fvotes = []
-for i in range(votes.shape[0]):
-    votesi = votes[i]
-    votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
-    rois.append((votesi[range(5),:]*pf2test).sum(axis=1)/(votesi[range(5),:]).sum(axis=1))
-    fvotes.append(votesi[-1,:])
-fvotes = np.asarray(fvotes)
-rois = (np.asarray(rois))
-w = np.asarray([1,2,3,4,5]).reshape(1,5)
-w = w/np.sum(w)
-rois = ((rois*w).sum(axis=1))
-rlt = votes[rois>=np.quantile(rois,1-prop_robots),5,:]
-rlt = pd.DataFrame({'code':raws['close'].columns,
-    'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
-    'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-rlt['index'] = rlt['count']/np.mean(rlt['count'])
-rlt = rlt[rlt['count']>0]
-rlts.append(rlt)
-#Validation
-refs = []
-for codei in rlt['code']:
-    refi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=date1, end_date=date2, adjust="qfq")
-    if(len(refi)==0):
-        refs.append(np.nan)
-    else:
-        refi = np.ravel(refi.iloc()[:,range(1,3)])
-        refs.append(refi[len(refi)-1]/refi[0])
-rlt['roi'] = refs
-rlt = rlt[rlt['index']>5]
-rlt['share'] = rlt['count']/np.sum(rlt['count'])
+threshold = np.quantile(pd.concat(rlts,axis=0).groupby('code').aggregate(count=('count','sum'))['count'],0.95)
+rlt = pd.concat(rlts,axis=0).groupby('code').agg(count=('count', 'sum'), robot=('index', lambda x: sum(x > 1.5))).reset_index().sort_values('count',ascending=False)
+rlt['index'] = rlt['count']/threshold
 rlt['date'] = date1
-print(np.sum(rlt['share']*rlt['roi']))
-print(rlt)
+
+
