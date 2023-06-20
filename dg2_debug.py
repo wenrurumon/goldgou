@@ -459,8 +459,8 @@ prop_robots = 0.1
 
 froi = 1
 rlts = []
-# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -524,7 +524,8 @@ for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').a
 
 froi = 1
 frlts = []
-for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -605,6 +606,7 @@ for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').a
     temp['share'] = temp['count']/np.sum(temp['count'])
     froi *= np.sum(temp['share']*temp['roi'])
     print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
+    print(temp)
 
 ##########################################################################################
 # Pipeline
