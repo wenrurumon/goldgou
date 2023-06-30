@@ -572,8 +572,8 @@ for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_d
 
 froi = 1
 frlts = []
-for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230531').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230531').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -640,26 +640,3 @@ for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230531').a
     print(temp.shape[0],np.sum(temp['share']*temp['roi']),froi)
     print(temp)
 
-#Listing Easy
-
-froi = 1
-frlts = []
-for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!='20230331').argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-# for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
-#Download Data
-    date0 = '20230619'
-    date0,date1,date2 = codelist.getdates(date0)
-    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
-    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
-    codes2 = list(set([elem for sublist in list(codelist2.getcodes(date1).values()) for elem in sublist]))
-    raw = loaddata(date0,codes)
-    #Roboting
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
-    votess = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)['votes']
-    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votess.shape[2]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votess.shape[2]-1):,:])
-    pf2test = (pf2test-1)/2+pf2test 
-    votes = np.concatenate(votess,axis=0)
-    votes = pd.DataFrame(np.column_stack((np.ravel(raws['close'].columns).reshape(raws['close'].shape[1],1),votes.mean(axis=0).T,(votes>1).mean(axis=0).T)))
-    votes.columns = ['codes','mean0','mean1','mean2','mean3','mean4','mean5','std0','std1','std2','std3','std4','std5']
-    votes['candidate'] = np.isin(votes['codes'],codes2)
-    votes.sort_values(['std5'],ascending=False)
