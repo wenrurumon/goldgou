@@ -388,6 +388,92 @@ def voting(votes,prop_votes,prop_robots):
     rlt['code'] = rlt.index
     return(rlt)
 
+# class updatecodes:
+#     def __init__(self):
+#         jg_date = []
+#         jg_codes = []
+#         with open(f'data/code_jg.txt','r') as file:
+#             lines = file.readlines()
+#             for line in lines:
+#                 jg_date.append(line.split(',')[0])
+#                 jg_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+#         qs_date = []
+#         qs_codes = []
+#         with open(f'data/code_qs.txt','r') as file:
+#             lines = file.readlines()
+#             for line in lines:
+#                 qs_date.append(line.split(',')[0])
+#                 qs_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+#         jg_date = np.asarray(jg_date)
+#         qs_date = np.asarray(qs_date)
+#         jg_codes = np.asarray(jg_codes)
+#         qs_codes = np.asarray(qs_codes)
+#         self.jg_date = jg_date
+#         self.jg_codes = jg_codes
+#         self.qs_date = qs_date
+#         self.qs_codes = qs_codes
+#         self.tradedates = [d.strftime('%Y%m%d') for d in np.ravel(ak.tool_trade_date_hist_sina())]
+#     # def jgdate(self):
+#     #     return self.jg_date
+#     # def jgcodes(self):
+#     #     return self.jg_codes
+#     # def qsdate(self):
+#     #     return self.qs_date
+#     # def qscodes(self):
+#     #     return self.qs_codes
+#     def getdates(self,date0):
+#         date1 = (np.asarray(self.tradedates)!=str(date0)).argsort()[0]
+#         return(np.asarray(self.tradedates)[range(date1,date1+3)].tolist())
+#     def getcodes(self,datei):
+#         raws = []
+#         raws.append(self.jg_codes[self.jg_date==str(datei)].tolist()[0].split(','))
+#         raws.append(self.qs_codes[self.qs_date==str(datei)].tolist()[0].split(','))
+#         raws = dict(zip(['jg','qs'],raws))
+#         return(raws)
+
+# class updatecodes2:
+#     def __init__(self):
+#         jg_date = []
+#         jg_codes = []
+#         with open(f'data/code_jg2.txt','r') as file:
+#             lines = file.readlines()
+#             for line in lines:
+#                 jg_date.append(line.split(',')[0])
+#                 jg_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+#         qs_date = []
+#         qs_codes = []
+#         with open(f'data/code_qs2.txt','r') as file:
+#             lines = file.readlines()
+#             for line in lines:
+#                 qs_date.append(line.split(',')[0])
+#                 qs_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+#         jg_date = np.asarray(jg_date)
+#         qs_date = np.asarray(qs_date)
+#         jg_codes = np.asarray(jg_codes)
+#         qs_codes = np.asarray(qs_codes)
+#         self.jg_date = jg_date
+#         self.jg_codes = jg_codes
+#         self.qs_date = qs_date
+#         self.qs_codes = qs_codes
+#         self.tradedates = [d.strftime('%Y%m%d') for d in np.ravel(ak.tool_trade_date_hist_sina())]
+#     # def jgdate(self):
+#     #     return self.jg_date
+#     # def jgcodes(self):
+#     #     return self.jg_codes
+#     # def qsdate(self):
+#     #     return self.qs_date
+#     # def qscodes(self):
+#     #     return self.qs_codes
+#     def getdates(self,date0):
+#         date1 = (np.asarray(self.tradedates)!=str(date0)).argsort()[0]
+#         return(np.asarray(self.tradedates)[range(date1,date1+3)].tolist())
+#     def getcodes(self,datei):
+#         raws = []
+#         raws.append(self.jg_codes[self.jg_date==str(datei)].tolist()[0].split(','))
+#         raws.append(self.qs_codes[self.qs_date==str(datei)].tolist()[0].split(','))
+#         raws = dict(zip(['jg','qs'],raws))
+#         return(raws)
+
 class updatecodes:
     def __init__(self):
         jg_date = []
@@ -404,66 +490,37 @@ class updatecodes:
             for line in lines:
                 qs_date.append(line.split(',')[0])
                 qs_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
-        jg_date = np.asarray(jg_date)
-        qs_date = np.asarray(qs_date)
-        jg_codes = np.asarray(jg_codes)
-        qs_codes = np.asarray(qs_codes)
-        self.jg_date = jg_date
-        self.jg_codes = jg_codes
-        self.qs_date = qs_date
-        self.qs_codes = qs_codes
-        self.tradedates = [d.strftime('%Y%m%d') for d in np.ravel(ak.tool_trade_date_hist_sina())]
-    # def jgdate(self):
-    #     return self.jg_date
-    # def jgcodes(self):
-    #     return self.jg_codes
-    # def qsdate(self):
-    #     return self.qs_date
-    # def qscodes(self):
-    #     return self.qs_codes
-    def getdates(self,date0):
-        date1 = (np.asarray(self.tradedates)!=str(date0)).argsort()[0]
-        return(np.asarray(self.tradedates)[range(date1,date1+3)].tolist())
-    def getcodes(self,datei):
-        raws = []
-        raws.append(self.jg_codes[self.jg_date==str(datei)].tolist()[0].split(','))
-        raws.append(self.qs_codes[self.qs_date==str(datei)].tolist()[0].split(','))
-        raws = dict(zip(['jg','qs'],raws))
-        return(raws)
-
-class updatecodes2:
-    def __init__(self):
-        jg_date = []
-        jg_codes = []
+        jg2_date = []
+        jg2_codes = []
         with open(f'data/code_jg2.txt','r') as file:
             lines = file.readlines()
             for line in lines:
-                jg_date.append(line.split(',')[0])
-                jg_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
-        qs_date = []
-        qs_codes = []
+                jg2_date.append(line.split(',')[0])
+                jg2_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+        qs2_date = []
+        qs2_codes = []
         with open(f'data/code_qs2.txt','r') as file:
             lines = file.readlines()
             for line in lines:
-                qs_date.append(line.split(',')[0])
-                qs_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
+                qs2_date.append(line.split(',')[0])
+                qs2_codes.append(','.join(line.split(',')[1:]).replace('\n',''))
         jg_date = np.asarray(jg_date)
         qs_date = np.asarray(qs_date)
         jg_codes = np.asarray(jg_codes)
         qs_codes = np.asarray(qs_codes)
+        jg2_date = np.asarray(jg2_date)
+        qs2_date = np.asarray(qs2_date)
+        jg2_codes = np.asarray(jg2_codes)
+        qs2_codes = np.asarray(qs2_codes)
         self.jg_date = jg_date
         self.jg_codes = jg_codes
         self.qs_date = qs_date
         self.qs_codes = qs_codes
+        self.jg2_date = jg2_date
+        self.jg2_codes = jg2_codes
+        self.qs2_date = qs2_date
+        self.qs2_codes = qs2_codes
         self.tradedates = [d.strftime('%Y%m%d') for d in np.ravel(ak.tool_trade_date_hist_sina())]
-    # def jgdate(self):
-    #     return self.jg_date
-    # def jgcodes(self):
-    #     return self.jg_codes
-    # def qsdate(self):
-    #     return self.qs_date
-    # def qscodes(self):
-    #     return self.qs_codes
     def getdates(self,date0):
         date1 = (np.asarray(self.tradedates)!=str(date0)).argsort()[0]
         return(np.asarray(self.tradedates)[range(date1,date1+3)].tolist())
@@ -471,7 +528,9 @@ class updatecodes2:
         raws = []
         raws.append(self.jg_codes[self.jg_date==str(datei)].tolist()[0].split(','))
         raws.append(self.qs_codes[self.qs_date==str(datei)].tolist()[0].split(','))
-        raws = dict(zip(['jg','qs'],raws))
+        raws.append(self.jg2_codes[self.jg2_date==str(datei)].tolist()[0].split(','))
+        raws.append(self.qs2_codes[self.qs2_date==str(datei)].tolist()[0].split(','))
+        raws = dict(zip(['jg','qs','jg2','qs2'],raws))
         return(raws)
 
 ##########################################################################################
@@ -480,9 +539,8 @@ class updatecodes2:
 
 #Parameter
 
-note = 'dg0'
+note = 'dg1010'
 codelist = updatecodes()
-codelist2 = updatecodes2()
 device = torch.device('cuda')
 seeds = [303,101,602,603,4,7,10,11,14,49]
 hidden_dim = 1024
@@ -502,68 +560,38 @@ range0 = 1
 prop_votes = 0.05
 prop_robots = 0.1
 
-rlt1 = []
-rlt2 = []
-
 date0 = codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]]
 
-for trail in range(10):
-    print(f'trail {trail} @ {datetime.datetime.now()}')
+for date0 in codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]:(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-1]).argsort()[0]]:
     #Download Data
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
-    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values()) for elem in sublist]))
-    codes2 = list(set([elem for sublist in list(codelist2.getcodes(date1).values()) for elem in sublist]))
+    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
+    codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
     raw = loaddata(date0,codes)
     #Modeling
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
-    models = []
-    for i in range(len(datasets)):
-        model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-        models.append(model)
-    #Roboting
-    votes = roboting(num_robots*len(models),models)
-    prd2 = votes.shape[2]-1
-    #Voting
-    votess = votes + 0
-    votes = np.concatenate(votes,axis=0)
-    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[1]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[1]-1):,:])
+    votess = []
+    for trail in range(10):
+        print(f'trail {trail} @ {datetime.datetime.now()}')
+        models = []
+        for i in range(len(datasets)):
+            model = train(i, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+            models.append(model)
+        votes = roboting(num_robots*len(models),models)
+        votess.append(votes)
+    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[2]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[2]-1):,:])
     pf2test = (pf2test-1)/2+pf2test 
-    rois = []
-    fvotes = []
-    for i in range(votes.shape[0]):
-        votesi = votes[i]
-        votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
-        rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
-        fvotes.append(votesi[-1,:])
-    fvotes = np.asarray(fvotes)
-    rois = (np.asarray(rois))
-    w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
-    w = w/np.sum(w)
-    rois = ((rois*w).sum(axis=1))
-    rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
-    rlt = pd.DataFrame({'code':raws['close'].columns,
-        'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
-        'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-    rlt = rlt[rlt['count']>0]
-    #Validation
-    rlt['date'] = date1
-    if np.ravel(rlt['index'])[3]<=1.5:
-        threshold = np.ravel(rlt['index'])[3]
-    elif np.ravel(rlt['index'])[6]>=1.5:
-        threshold = np.ravel(rlt['index'])[5]
-    else:
-        threshold = 1.5
-    rlt = rlt[rlt['index']>=threshold]
-    rlt['share'] = rlt['count']/np.sum(rlt['count'])
-    rlt1.append(rlt)
-    for i in range(len(raws['close'].columns)):
-        if (raws['close'].columns[i] not in codes2):
-            votess[:,:,:,i] = -1
-    rlts = []
-    for v in range(votess.shape[0]):
-        votes = votess[v,:,:,:]
+    np.savez(f'model/{note}_{date1}.npz',votes=np.asarray(votess),codes=np.ravel(raws['close'].columns).tolist(),codes2=codes2,pf2test=pf2test)
+    #Voting
+    rlt1 = []
+    rlt2 = []
+    rlt3 = []
+    file = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)
+    codes = file['codes']
+    codes2 = file['codes2']
+    for i in range(file['votes'].shape[0]):
+        votes = np.concatenate(file['votes'][i],axis=0)
         rois = []
         fvotes = []
         for i in range(votes.shape[0]):
@@ -581,17 +609,139 @@ for trail in range(10):
             'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
             'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
         rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-        rlt['date'] = date1
-        rlts.append(rlt)
-    threshold = np.quantile(pd.concat(rlts,axis=0).groupby('code').aggregate(count=('count','sum'))['count'],0.95)
-    rlt = pd.concat(rlts,axis=0).groupby('code').agg(count=('count', 'sum'), robot=('index', lambda x: sum(x > 1.5))).reset_index().sort_values('count',ascending=False)
-    rlt['index'] = rlt['count']/threshold
-    rlt['date'] = date1
-    if np.ravel(rlt['index'])[3]<=1.5:
-        threshold = np.ravel(rlt['index'])[3]
-    elif np.ravel(rlt['index'])[6]>=1.5:
-        threshold = np.ravel(rlt['index'])[5]
-    else:
-        threshold = 1.5
-    rlt = rlt[rlt['index']>=threshold]
-    rlt2.append(rlt)
+        rlt1.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+        rlt['count'] = rlt.apply(lambda row: row['count'] if row['code'] in file['codes2'] else 0, axis=1)
+        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+        rlt2.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+        for i in range(len(codes)):
+            if (codes[i] not in codes2):
+                votes[:,:,i] = -1
+        rois = []
+        fvotes = []
+        for i in range(votes.shape[0]):
+            votesi = votes[i]
+            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+            rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
+            fvotes.append(votesi[-1,:])
+        fvotes = np.asarray(fvotes)
+        rois = (np.asarray(rois))
+        w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
+        w = w/np.sum(w)
+        rois = ((rois*w).sum(axis=1))
+        rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
+        rlt = pd.DataFrame({'code':raws['close'].columns,
+            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+        rlt3.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    rlt1 = pd.concat(rlt1,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+    rlt2 = pd.concat(rlt2,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+    rlt3 = pd.concat(rlt3,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+    rlt1['share'] = rlt1['count']/np.sum(rlt1['count'])
+    rlt2['share'] = rlt2['count']/np.sum(rlt2['count'])
+    rlt3['share'] = rlt3['count']/np.sum(rlt3['count'])
+    rlt3['date'] = rlt2['date'] = rlt1['date'] = date1
+    print(rlt1)
+    print(rlt2)
+    print(rlt3)
+
+##########################################################################################
+# Voting
+##########################################################################################
+
+note = 'dg1010'
+codelist = updatecodes3()
+device = torch.device('cuda')
+seeds = [303,101,602,603,4,7,10,11,14,49]
+hidden_dim = 1024
+latent_dim = 128
+dropout_rate = 0.5
+l2_reg = 0.01
+num_epochs = 10000
+lr = 0.001
+early_tol = 1.1
+patience = 20
+patience2 = 10
+num_robots = 1000
+process = process1
+prd1 = 40
+prd2 = 5
+range0 = 1
+prop_votes = 0.05
+prop_robots = 0.1
+
+date0 = codelist.tradedates[(np.asarray(codelist.tradedates)!=codelist.jg_date[len(codelist.jg_date)-2]).argsort()[0]]
+
+#Download Data
+date0,date1,date2 = codelist.getdates(date0)
+print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
+codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
+raw = loaddata(date0,codes)
+#Modeling
+datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
+
+#Voting
+rlt1 = []
+rlt2 = []
+rlt3 = []
+file = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)
+codes = file['codes']
+codes2 = file['codes2']
+pf2test = file['pf2test']
+for i in range(file['votes'].shape[0]):
+    votes = np.concatenate(file['votes'][i],axis=0)
+    rois = []
+    fvotes = []
+    for i in range(votes.shape[0]):
+        votesi = votes[i]
+        votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+        rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
+        fvotes.append(votesi[-1,:])
+    fvotes = np.asarray(fvotes)
+    rois = (np.asarray(rois))
+    w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
+    w = w/np.sum(w)
+    rois = ((rois*w).sum(axis=1))
+    rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
+    rlt = pd.DataFrame({'code':raws['close'].columns,
+        'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+        'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+    rlt1.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    rlt['count'] = rlt.apply(lambda row: row['count'] if row['code'] in file['codes2'] else 0, axis=1)
+    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+    rlt2.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    for i in range(len(codes)):
+        if (codes[i] not in codes2):
+            votes[:,:,i] = -1
+    rois = []
+    fvotes = []
+    for i in range(votes.shape[0]):
+        votesi = votes[i]
+        votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+        rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
+        fvotes.append(votesi[-1,:])
+    fvotes = np.asarray(fvotes)
+    rois = (np.asarray(rois))
+    w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
+    w = w/np.sum(w)
+    rois = ((rois*w).sum(axis=1))
+    rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
+    rlt = pd.DataFrame({'code':raws['close'].columns,
+        'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+        'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
+    rlt3.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+
+#Summarise
+rlt1 = pd.concat(rlt1,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+rlt2 = pd.concat(rlt2,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+rlt3 = pd.concat(rlt3,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
+rlt1['share'] = rlt1['count']/np.sum(rlt1['count'])
+rlt2['share'] = rlt2['count']/np.sum(rlt2['count'])
+rlt3['share'] = rlt3['count']/np.sum(rlt3['count'])
+rlt3['date'] = rlt2['date'] = rlt1['date'] = date1
+print(rlt1)
+print(rlt2)
+print(rlt3)
