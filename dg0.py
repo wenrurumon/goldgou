@@ -587,6 +587,7 @@ for date0 in codelist.tradedates[date0id:date1id]:
  #Modeling Evaluation
 
 rlts = []
+roi0 = [1,1,1]
 for date0 in codelist.tradedates[date0id:date1id]:
     date0,date1,date2 = codelist.getdates(date0)
     print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
@@ -604,7 +605,6 @@ for date0 in codelist.tradedates[date0id:date1id]:
     codes = file['codes']
     codes2 = file['codes2']
     pf2test = file['pf2test']
-    print(date0,file['votes'][0,1,1,1,1],file['votes'][1,1,1,1,1])
     for i in range(file['votes'].shape[0]):
         votes = np.concatenate(file['votes'][i],axis=0)
         rois = []
@@ -657,29 +657,33 @@ for date0 in codelist.tradedates[date0id:date1id]:
     rlt3['share'] = rlt3['count']/np.sum(rlt3['count'])
     rlt3['buydate'] = rlt2['buydate'] = rlt1['buydate'] = date1
     rlt3['valdate'] = rlt2['valdate'] = rlt1['valdate'] = date2
-    print(rlt1)
-    print(rlt2)
-    print(rlt3)
     rlt1['vote'] = 'rlt1'
     rlt2['vote'] = 'rlt2'
     rlt3['vote'] = 'rlt3'
-    rlts.append(pd.concat((rlt1,rlt2,rlt3),axis=0))
+    rlt = pd.concat((rlt1,rlt2,rlt3),axis=0).reset_index()
+    rois = []
+    for i in range(rlt.shape[0]):
+        codei = rlt['code'][i]
+        date1 = rlt['buydate'][i]
+        date2 = rlt['valdate'][i]
+        rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date1), end_date=int(date2), adjust="qfq")
+        if len(rawi)==0:
+            rois.append(1)
+        else:
+            rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
+            rawi = np.ravel(rawi.iloc()[:,[1,2]])
+            rois.append(rawi[len(rawi)-1]/rawi[0])
+    rlt['roi'] = rois
+    rltsum = rlt.groupby(['vote']).apply(lambda x: (x['share'] * x['roi']).sum()).reset_index(name='roi')
+    rltsum['agg'] = rltsum['roi'] * roi0
+    roi0 = rltsum['agg']
+    print(rlt)
+    print(rltsum)
+    rlts.append(rlt)
 
-rlts = pd.concat(rlts,axis=0).reset_index()
-rois = []
-for i in range(rlts.shape[0]):
-    codei = rlts['code'][i]
-    date1 = rlts['buydate'][i]
-    date2 = rlts['valdate'][i]
-    rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date1), end_date=int(date2), adjust="qfq")
-    if len(rawi)==0:
-        rois.append(1)
-    else:
-        rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
-        rawi = np.ravel(rawi.iloc()[:,[1,2]])
-        rois.append(rawi[len(rawi)-1]/rawi[0])
-
-rlts['roi'] = rois
+rlts = pd.concat(rlts,axis=0)
 out = rlts.groupby(['vote', 'buydate']).apply(lambda x: (x['share'] * x['roi']).sum()).reset_index(name='result')
 pd.pivot_table(out, values='result', index=['buydate'], columns=['vote'])
-pd.pivot_table(out, values='result', index=['buydate'], columns=['vote']).prod(axis=0)
+pd.pivot_table(out[(out['buydate'].astype(int))<=20230732], values='result', index=['buydate'], columns=['vote']).prod(axis=0)
+
+
