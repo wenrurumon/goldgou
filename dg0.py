@@ -99,7 +99,8 @@ def process1(raw,prd1,prd2,seeds):
 	P = []
 	B = []
 	for i in range(closepvt.shape[0]-prd1-prd2):
-	    profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
+	    profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)-openpvt[i+prd1,None,:]
+	    # profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
 	    backi = lowpvt[range(i+prd1+1,i+prd1+prd2+1),:].min(axis=0)/openpvt[i+prd1,None,:]
 	    P.append(profi)
 	    B.append(backi)
@@ -572,7 +573,7 @@ for date0 in codelist.tradedates[date0id:date1id]:
     #Modeling
     datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
     votess = []
-    for trail in range(1):
+    for trail in range(2):
         print(f'trail {trail} @ {datetime.datetime.now()}')
         models = []
         for i in range(len(seeds)):
