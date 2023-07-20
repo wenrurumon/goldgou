@@ -75,7 +75,7 @@ hidden_dim = 8
 #Data Process
 
 # X_train,X_test,Y_train,Y_test = train_test_split(X, Y, test_size=0.2, random_state=seedi)
-X_train,X_test,Y_train,Y_test = X[range(800):,:],X[800:,:],Y[range(800),:],Y[800:,:]
+X_train,X_test,Y_train,Y_test = X[range(800),:],X[800:,:],Y[range(800),:],Y[800:,:]
 train_dataset = TensorDataset(X_train, Y_train)
 train_loader = DataLoader(train_dataset, batch_size=32,shuffle=True)
 
