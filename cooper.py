@@ -61,7 +61,7 @@ filename = 'data/data_train_demo.csv'
 seedi = 777
 device = torch.device('cpu')
 hidden_dim = 1
-dropout_rate = 0.1
+dropout_rate = 0.0
 l2_penalty = 0.001
 lr = 0.01
 
@@ -74,7 +74,8 @@ hidden_dim = 8
 ###################################
 #Data Process
 
-X_train,X_test,Y_train,Y_test = train_test_split(X, Y, test_size=0.2, random_state=seedi)
+# X_train,X_test,Y_train,Y_test = train_test_split(X, Y, test_size=0.2, random_state=seedi)
+X_train,X_test,Y_train,Y_test = X[range(800):,:],X[800:,:],Y[range(800),:],Y[800:,:]
 train_dataset = TensorDataset(X_train, Y_train)
 train_loader = DataLoader(train_dataset, batch_size=32,shuffle=True)
 
@@ -103,5 +104,20 @@ for epoch in range(epochs):
     if (epoch + 1) % 100 == 0:
         print(f'Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.4f}')
 
-np.mean(np.ravel((model(X_train)>0.5)+0) == np.ravel(Y_train))
-np.mean(np.ravel((model(X_test)>0.5)+0) == np.ravel(Y_test))
+torch.save(model.state_dict(), 'model.pth')
+loaded_model = LogisticRegressionModel(input_dim,hidden_dim,dropout_rate,l2_penalty)
+loaded_model.load_state_dict(torch.load('model.pth'))
+
+
+###################################
+#Validate
+
+def precision(y_pred, y_true):
+    correct = (y_pred == y_true).sum().item()
+    total = y_true.size(0)
+    return correct / total
+
+precision(model(X_train)>0.5,Y_train)
+precision(model(X_test)>0.5,Y_test)
+precision(loaded_model(X_train)>0.5,Y_train)
+precision(loaded_model(X_test)>0.5,Y_test)
