@@ -84,8 +84,6 @@ train_loader = DataLoader(train_dataset, batch_size=32,shuffle=True)
 
 sklmodel = linear_model.LogisticRegression()
 sklmodel.fit(X_train,np.ravel(Y_train))
-np.mean(sklmodel.predict(X_train)==np.ravel(Y_train))
-np.mean(sklmodel.predict(X_test)==np.ravel(Y_test))
 
 ###################################
 #Trianing
@@ -112,12 +110,12 @@ loaded_model.load_state_dict(torch.load('model.pth'))
 ###################################
 #Validate
 
-def precision(y_pred, y_true):
-    correct = (y_pred == y_true).sum().item()
-    total = y_true.size(0)
-    return correct / total
+def precision(y_pred, y_true, thres=0.5):
+    y_pred = np.ravel(y_pred) > thres
+    y_true = np.ravel(y_true)
+    return(np.sum((y_pred==y_true)&(y_pred))/np.sum(np.ravel(y_true)))
 
-precision(model(X_train)>0.5,Y_train)
-precision(model(X_test)>0.5,Y_test)
-precision(loaded_model(X_train)>0.5,Y_train)
-precision(loaded_model(X_test)>0.5,Y_test)
+precision(sklmodel.predict(X_train),Y_train,0.4)
+precision(model(X_train).detach().numpy(),Y_train,0.4)
+precision(sklmodel.predict(X_test),Y_test,0.4)
+precision(model(X_test).detach().numpy(),Y_test,0.4)
