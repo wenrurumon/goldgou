@@ -18,6 +18,7 @@ import logging
 import datetime
 from collections import Counter
 import math
+from sklearn.ensemble import RandomForestRegressor
 
 ###################################
 #Module
@@ -85,6 +86,9 @@ train_loader = DataLoader(train_dataset, batch_size=32,shuffle=True)
 sklmodel = linear_model.LogisticRegression()
 sklmodel.fit(X_train,np.ravel(Y_train))
 
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, np.ravel(Y_train))
+
 ###################################
 #Trianing
 
@@ -106,7 +110,6 @@ torch.save(model.state_dict(), 'model.pth')
 loaded_model = LogisticRegressionModel(input_dim,hidden_dim,dropout_rate,l2_penalty)
 loaded_model.load_state_dict(torch.load('model.pth'))
 
-
 ###################################
 #Validate
 
@@ -116,6 +119,10 @@ def precision(y_pred, y_true, thres=0.5):
     return(np.sum((y_pred==y_true)&(y_pred))/np.sum(np.ravel(y_true)))
 
 precision(sklmodel.predict(X_train),Y_train,0.4)
+precision(rf_model.predict(X_train),Y_train,0.4)
 precision(model(X_train).detach().numpy(),Y_train,0.4)
 precision(sklmodel.predict(X_test),Y_test,0.4)
+precision(rf_model.predict(X_test),Y_test,0.4)
 precision(model(X_test).detach().numpy(),Y_test,0.4)
+
+
