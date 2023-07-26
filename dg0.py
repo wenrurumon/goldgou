@@ -27,13 +27,13 @@ def printlog(x):
 def loaddata(date0,codes):
     raw = []
     for codei in codes:
-    	rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq")
-    	rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
-    	rawi = rawi.iloc()[:,[0,1,2,3,4,7,10]]
-    	# rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq").iloc()[:,range(7)]
-    	# rawi.columns = ['date','open','close','high','low','vol','val']
-    	rawi['code'] = codei
-    	raw.append(rawi)
+        rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq")
+        rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
+        rawi = rawi.iloc()[:,[0,1,2,3,4,7,10]]
+        # rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date0)-20000, end_date=int(date0), adjust="qfq").iloc()[:,range(7)]
+        # rawi.columns = ['date','open','close','high','low','vol','val']
+        rawi['code'] = codei
+        raw.append(rawi)
     raw = pd.concat(raw,axis=0)
     raw = raw.drop('vol', axis=1)
     return(raw)
@@ -42,104 +42,206 @@ def fill_missing_values(row):
     return row.fillna(method='ffill')
 
 def process1(raw,prd1,prd2,seeds):
-	# prd2 = 4
-	raw =  raw.drop_duplicates()
-	raw['date'] = pd.to_datetime(raw['date'])
-	raw = raw.sort_values(['code','date'])
-	raw['did'] = raw['date'].rank(method='dense').astype(int) - 1
-	def fill_missing_values(row):
-	    return row.fillna(method='ffill')
-	raws = []
-	for i in ['open','close','val','high','low']:
-	    rawi = pd.pivot_table(raw, values=i, index=['did'], columns=['code'])
-	    rawi = rawi.apply(fill_missing_values,axis=0)
-	    raws.append(rawi)
-	raws = dict(zip(['open','close','val','high','low'],raws))
-	codesel = ~np.isnan(np.ravel(raws['close'].iloc()[0,:]))
-	codes = np.ravel(raws['close'].columns)[codesel]
-	closepvt = np.asarray(raws['close'])[:,codesel]
-	openpvt = np.asarray(raws['open'])[:,codesel]
-	valpvt = np.asarray(raws['val'])[:,codesel]
-	lowpvt = np.asarray(raws['low'])[:,codesel]
-	highpvt = np.asarray(raws['high'])[:,codesel]
-	for i in ['open','close','val','high','low']:
-	    raws[i] = raws[i].iloc()[:,codesel]
-	Xclose = []
-	for i in range(closepvt.shape[0]-(prd1-1)):
-	    xi = closepvt[range(i, i + (prd1-1)), :] / closepvt[i + (prd1-1), None, :]
-	    xi = np.nan_to_num(xi,nan=-1)
-	    Xclose.append(np.ravel(xi.T))
-	Xclose = np.asarray(Xclose)
-	# Xhigh = []
-	# for i in range(highpvt.shape[0]-(prd1-1)):
-	#     xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
-	#     xi = np.nan_to_num(xi,nan=-1)
-	#     xi = xi[-5:,:]
-	#     Xhigh.append(np.ravel(xi.T))
-	# Xhigh = np.asarray(Xhigh)
-	# Xlow = []
-	# for i in range(lowpvt.shape[0]-(prd1-1)):
-	#     xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
-	#     xi = np.nan_to_num(xi,nan=-1)
-	#     xi = xi[-5:,:]
-	#     Xlow.append(np.ravel(xi.T))
-	# Xlow = np.asarray(Xlow)
-	Xval = []
-	Xval2 = []
-	for i in range(valpvt.shape[0]-(prd1-1)):
-	    xi = valpvt[range(i, i + (prd1-1)), :] / valpvt[i + (prd1-1), None, :]
-	    xi = np.nan_to_num(xi,nan=-1)
-	    Xval2.append(np.ravel(xi.T))
-	    xi = xi[-10:,:]
-	    Xval.append(np.ravel(xi.T))
-	Xval = np.asarray(Xval)
-	Xval2 = np.asarray(Xval2)
-	# X = np.concatenate((Xclose,Xval2),axis=1)
-	X = np.concatenate((Xclose,Xval2,Xclose*Xval2),axis=1)
-	P = []
-	B = []
-	for i in range(closepvt.shape[0]-prd1-prd2):
-	    profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)-openpvt[i+prd1,None,:]
-	    # profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
-	    backi = lowpvt[range(i+prd1+1,i+prd1+prd2+1),:].min(axis=0)/openpvt[i+prd1,None,:]
-	    P.append(profi)
-	    B.append(backi)
-	P = np.concatenate(P,axis=0)
-	B = np.concatenate(B,axis=0)
-	Z = P
-	Xscaler = StandardScaler()
-	Xscaler.fit(X)
-	X = Xscaler.transform(X)
-	Zscaler = StandardScaler()
-	Zscaler.fit(Z)
-	Z = Zscaler.transform(Z)
-	Y = X[-Z.shape[0]:,range(Xclose.shape[1])]
-	X2 = X[Z.shape[0]:,:]
-	X = X[range(Z.shape[0]),:]
-	X = torch.tensor(X).float().to(device)
-	Y = torch.tensor(Y).float().to(device)
-	Z = torch.tensor(Z).float().to(device)
-	X2 = torch.tensor(X2).float().to(device)
-	datasets = []
-	for seed in seeds:
-	    X_train, X_test, Y_train, Y_test, Z_train, Z_test = train_test_split(X, Y, Z, test_size=0.3, random_state=seed)
-	    datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
-	# for seed in seeds:
-	#     np.random.seed(seed)
-	#     samples = np.random.permutation(np.ravel(range(X.shape[0])))
-	#     samples = np.ravel((samples%5).tolist())
-	#     for s in range(5):
-	#         X_train,Y_train,Z_train,X_test,Y_test,Z_test=X[samples!=s,:],Y[samples!=s,:],Z[samples!=s,:],X[samples==s,:],Y[samples==s,:],Z[samples==s,:]
-	#         datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
-	life = []
-	for i in range(10, closepvt.shape[0]):
-	    data = closepvt[(i-9):(i+1), :]
-	    col_mean = np.mean(data, axis=0)
-	    life.append(col_mean)
-	life = np.array(life)
-	raws['life'] = pd.DataFrame(life)
-	raws['life'].columns = raws['close'].columns
-	return(datasets,X,Y,Z,X2,Zscaler,raws)
+    # prd2 = 5
+    raw =  raw.drop_duplicates()
+    raw['date'] = pd.to_datetime(raw['date'])
+    raw = raw.sort_values(['code','date'])
+    raw['did'] = raw['date'].rank(method='dense').astype(int) - 1
+    def fill_missing_values(row):
+        return row.fillna(method='ffill')
+    raws = []
+    for i in ['open','close','val','high','low']:
+        rawi = pd.pivot_table(raw, values=i, index=['did'], columns=['code'])
+        rawi = rawi.apply(fill_missing_values,axis=0)
+        raws.append(rawi)
+    raws = dict(zip(['open','close','val','high','low'],raws))
+    codesel = ~np.isnan(np.ravel(raws['close'].iloc()[0,:]))
+    codes = np.ravel(raws['close'].columns)[codesel]
+    closepvt = np.asarray(raws['close'])[:,codesel]
+    openpvt = np.asarray(raws['open'])[:,codesel]
+    valpvt = np.asarray(raws['val'])[:,codesel]
+    lowpvt = np.asarray(raws['low'])[:,codesel]
+    highpvt = np.asarray(raws['high'])[:,codesel]
+    for i in ['open','close','val','high','low']:
+        raws[i] = raws[i].iloc()[:,codesel]
+    Xclose = []
+    for i in range(closepvt.shape[0]-(prd1-1)):
+        xi = closepvt[range(i, i + (prd1-1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xclose.append(np.ravel(xi.T))
+    Xclose = np.asarray(Xclose)
+    # Xhigh = []
+    # for i in range(highpvt.shape[0]-(prd1-1)):
+    #    xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    #    xi = np.nan_to_num(xi,nan=-1)
+    #    xi = xi[-5:,:]
+    #    Xhigh.append(np.ravel(xi.T))
+    # Xhigh = np.asarray(Xhigh)
+    # Xlow = []
+    # for i in range(lowpvt.shape[0]-(prd1-1)):
+    #    xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    #    xi = np.nan_to_num(xi,nan=-1)
+    #    xi = xi[-5:,:]
+    #    Xlow.append(np.ravel(xi.T))
+    # Xlow = np.asarray(Xlow)
+    Xval = []
+    Xval2 = []
+    for i in range(valpvt.shape[0]-(prd1-1)):
+        xi = valpvt[range(i, i + (prd1-1)), :] / valpvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xval2.append(np.ravel(xi.T))
+        xi = xi[-10:,:]
+        Xval.append(np.ravel(xi.T))
+    Xval = np.asarray(Xval)
+    Xval2 = np.asarray(Xval2)
+    # X = np.concatenate((Xclose,Xval2),axis=1)
+    X = np.concatenate((Xclose,Xval2,Xclose*Xval2),axis=1)
+    P = []
+    for i in range(closepvt.shape[0]-prd1-prd2):
+        profi = (np.exp(closepvt[range(i+prd1,i+prd1+prd2),:])-1).mean(axis=0)/(np.exp(openpvt[i+prd1,None,:])-1)
+        # profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
+        P.append(profi)
+    P = np.concatenate(P,axis=0)
+    # for i in range(closepvt.shape[0]-prd1-prd2):
+    #     close0 = np.exp(closepvt[range(i+prd1-1,i+prd1+prd2-1),:])-1
+    #     open1 = np.exp(openpvt[range(i+prd1,i+prd1+prd2),:])-1
+    #     close1 = np.exp(closepvt[range(i+prd1,i+prd1+prd2),:])-1
+    #     high1 = np.exp(highpvt[range(i+prd1,i+prd1+prd2),:])-1
+    #     low1 = np.exp(lowpvt[range(i+prd1,i+prd1+prd2),:])-1
+    #     roi1 = close1+0
+    #     roi1[0,:] = roi1[0,:]/open1[0,:]
+    #     roi1[1:,:] = roi1[1:,:]/close1[range(4),:]
+    #     roi1[high1==low1] = np.where(roi1[high1==low1]>1,1,roi1[high1==low1])
+    #     P.append(roi1.prod(axis=0))
+    # P = np.asarray(P)
+    Z = P
+    Xscaler = StandardScaler()
+    Xscaler.fit(X)
+    X = Xscaler.transform(X)
+    Zscaler = StandardScaler()
+    Zscaler.fit(Z)
+    Z = Zscaler.transform(Z)
+    Y = X[-Z.shape[0]:,range(Xclose.shape[1])]
+    X2 = X[Z.shape[0]:,:]
+    X = X[range(Z.shape[0]),:]
+    X = torch.tensor(X).float().to(device)
+    Y = torch.tensor(Y).float().to(device)
+    Z = torch.tensor(Z).float().to(device)
+    X2 = torch.tensor(X2).float().to(device)
+    datasets = []
+    for seed in seeds:
+        X_train, X_test, Y_train, Y_test, Z_train, Z_test = train_test_split(X, Y, Z, test_size=0.3, random_state=seed)
+        datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+    life = []
+    for i in range(10, closepvt.shape[0]):
+        data = closepvt[(i-9):(i+1), :]
+        col_mean = np.mean(data, axis=0)
+        life.append(col_mean)
+    life = np.array(life)
+    raws['life'] = pd.DataFrame(life)
+    raws['life'].columns = raws['close'].columns
+    return(datasets,X,Y,Z,X2,Zscaler,raws)
+
+def process2(raw,prd1,prd2,seeds):
+    # prd2 = 5
+    raw =  raw.drop_duplicates()
+    raw['date'] = pd.to_datetime(raw['date'])
+    raw = raw.sort_values(['code','date'])
+    raw['did'] = raw['date'].rank(method='dense').astype(int) - 1
+    def fill_missing_values(row):
+        return row.fillna(method='ffill')
+    raws = []
+    for i in ['open','close','val','high','low']:
+        rawi = pd.pivot_table(raw, values=i, index=['did'], columns=['code'])
+        rawi = rawi.apply(fill_missing_values,axis=0)
+        raws.append(rawi)
+    raws = dict(zip(['open','close','val','high','low'],raws))
+    codesel = ~np.isnan(np.ravel(raws['close'].iloc()[0,:]))
+    codes = np.ravel(raws['close'].columns)[codesel]
+    closepvt = np.asarray(raws['close'])[:,codesel]
+    openpvt = np.asarray(raws['open'])[:,codesel]
+    valpvt = np.asarray(raws['val'])[:,codesel]
+    lowpvt = np.asarray(raws['low'])[:,codesel]
+    highpvt = np.asarray(raws['high'])[:,codesel]
+    for i in ['open','close','val','high','low']:
+        raws[i] = raws[i].iloc()[:,codesel]
+    Xclose = []
+    for i in range(closepvt.shape[0]-(prd1-1)):
+        xi = closepvt[range(i, i + (prd1-1)), :] / closepvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xclose.append(np.ravel(xi.T))
+    Xclose = np.asarray(Xclose)
+    # Xhigh = []
+    # for i in range(highpvt.shape[0]-(prd1-1)):
+    #    xi = highpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    #    xi = np.nan_to_num(xi,nan=-1)
+    #    xi = xi[-5:,:]
+    #    Xhigh.append(np.ravel(xi.T))
+    # Xhigh = np.asarray(Xhigh)
+    # Xlow = []
+    # for i in range(lowpvt.shape[0]-(prd1-1)):
+    #    xi = lowpvt[range(i, i + (prd1)), :] / closepvt[i + (prd1-1), None, :]
+    #    xi = np.nan_to_num(xi,nan=-1)
+    #    xi = xi[-5:,:]
+    #    Xlow.append(np.ravel(xi.T))
+    # Xlow = np.asarray(Xlow)
+    Xval = []
+    Xval2 = []
+    for i in range(valpvt.shape[0]-(prd1-1)):
+        xi = valpvt[range(i, i + (prd1-1)), :] / valpvt[i + (prd1-1), None, :]
+        xi = np.nan_to_num(xi,nan=-1)
+        Xval2.append(np.ravel(xi.T))
+        xi = xi[-10:,:]
+        Xval.append(np.ravel(xi.T))
+    Xval = np.asarray(Xval)
+    Xval2 = np.asarray(Xval2)
+    # X = np.concatenate((Xclose,Xval2),axis=1)
+    X = np.concatenate((Xclose,Xval2,Xclose*Xval2),axis=1)
+    P = []
+    # for i in range(closepvt.shape[0]-prd1-prd2):
+        # profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)-openpvt[i+prd1,None,:]
+        # profi = openpvt[range(i+prd1+1,i+prd1+prd2+1),:].mean(axis=0)/openpvt[i+prd1,None,:]
+        # P.append(profi)
+    # P = np.concatenate(P,axis=0)
+    for i in range(closepvt.shape[0]-prd1-prd2):
+        close0 = np.exp(closepvt[range(i+prd1-1,i+prd1+prd2-1),:])-1
+        open1 = np.exp(openpvt[range(i+prd1,i+prd1+prd2),:])-1
+        close1 = np.exp(closepvt[range(i+prd1,i+prd1+prd2),:])-1
+        high1 = np.exp(highpvt[range(i+prd1,i+prd1+prd2),:])-1
+        low1 = np.exp(lowpvt[range(i+prd1,i+prd1+prd2),:])-1
+        roi1 = close1+0
+        roi1[0,:] = roi1[0,:]/open1[0,:]
+        roi1[1:,:] = roi1[1:,:]/close1[range(4),:]
+        roi1[high1==low1] = np.where(roi1[high1==low1]>1,1,roi1[high1==low1])
+        P.append(roi1.prod(axis=0))
+    P = np.asarray(P)
+    Z = P
+    Xscaler = StandardScaler()
+    Xscaler.fit(X)
+    X = Xscaler.transform(X)
+    Zscaler = StandardScaler()
+    Zscaler.fit(Z)
+    Z = Zscaler.transform(Z)
+    Y = X[-Z.shape[0]:,range(Xclose.shape[1])]
+    X2 = X[Z.shape[0]:,:]
+    X = X[range(Z.shape[0]),:]
+    X = torch.tensor(X).float().to(device)
+    Y = torch.tensor(Y).float().to(device)
+    Z = torch.tensor(Z).float().to(device)
+    X2 = torch.tensor(X2).float().to(device)
+    datasets = []
+    for seed in seeds:
+        X_train, X_test, Y_train, Y_test, Z_train, Z_test = train_test_split(X, Y, Z, test_size=0.3, random_state=seed)
+        datasets.append([X_train,Y_train,Z_train,X_test,Y_test,Z_test])
+    life = []
+    for i in range(10, closepvt.shape[0]):
+        data = closepvt[(i-9):(i+1), :]
+        col_mean = np.mean(data, axis=0)
+        life.append(col_mean)
+    life = np.array(life)
+    raws['life'] = pd.DataFrame(life)
+    raws['life'].columns = raws['close'].columns
+    return(datasets,X,Y,Z,X2,Zscaler,raws)
 
 class Autoencoder(nn.Module):
     def __init__(self, X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg):
@@ -244,7 +346,7 @@ def train(modeli, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, p
                     vlossz = criterion(Z_test, zhate)
                     vlossy = criterion(Y_test, yhate)
                     vloss = wy*vlossy + wz*vlossz + l2_losse
-                break    
+                break
     printlog(f"Model {modeli}.{m} stop, Epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
     return(model)
 
@@ -352,70 +454,70 @@ class updatecodes:
         return(raws)
 
 def train2(X, Y, Z, seed, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2):
-	weights = [math.log(math.ceil((i+1)/20)) for i in range(X.shape[0])]
-	X_train, X_test, Y_train, Y_test, Z_train, Z_test, W_train, W_test = train_test_split(X, Y, Z, weights, test_size=0.3, random_state=seed)
-	X_dim = X_train.shape[1]
-	Y_dim = Y_train.shape[1]
-	Z_dim = Z_train.shape[1]
-	# Model 0
-	m = 0
-	train_dataset = TensorDataset(X_train, Y_train, Z_train)
-	sampler = WeightedRandomSampler(W_train,len(W_train))
-	train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
-	criterion = nn.MSELoss()
-	counter2 = 0
-	best_loss = np.inf
-	model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
-	optimizer = optim.Adam(model.parameters(), lr=lr*0.1)
-	for epoch in range(num_epochs):
-	    for xtr, ytr, ztr in train_loader:
-	        xtr = xtr.float()
-	        ytr = ytr.float()
-	        yhat, zhat, l2_loss = model(xtr)
-	        lossz = criterion(ztr, zhat)
-	        lossy = criterion(ytr, yhat)
-	        # wwz = epoch/1000
-	        wwz = 1
-	        wz = lossz / (wwz*lossz+lossy)
-	        wy = 1-wz
-	        loss = wy*lossy + wz*lossz + l2_loss
-	        optimizer.zero_grad()
-	        loss.backward()
-	        optimizer.step()
-	    with torch.no_grad():
-	        yhate, zhate, l2_losse = model(X_test)
-	        vlossz = criterion(Z_test, zhate)
-	        vlossy = criterion(Y_test, yhate)
-	        vloss = wy*vlossy + wz*vlossz + l2_losse
-	    if epoch==0:
-	        printlog(f'Model {seed}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
-	    if epoch>0:
-	        if vloss < best_loss*early_tol:
-	            if vloss < best_loss:
-	                best_loss = vloss
-	                best_model_state_dict = model.state_dict()
-	                counter = 0
-	            else:
-	                counter += ((counter2+1)/10)
-	        else:
-	            counter += 1
-	        if counter >= patience:
-	            counter2 += 1
-	            # if counter2 == 1:
-	                # printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
-	            counter = 0
-	            optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
-	            model.load_state_dict(best_model_state_dict)
-	        if counter2 > patience2:
-	            model.load_state_dict(best_model_state_dict)
-	            with torch.no_grad():
-	                yhate, zhate, l2_losse = model(X_test)
-	                vlossz = criterion(Z_test, zhate)
-	                vlossy = criterion(Y_test, yhate)
-	                vloss = wy*vlossy + wz*vlossz + l2_losse
-	            break    
-	printlog(f"Model {seed}.{m} stop, Epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
-	return(model)
+    weights = [math.log(math.ceil((i+1)/20)) for i in range(X.shape[0])]
+    X_train, X_test, Y_train, Y_test, Z_train, Z_test, W_train, W_test = train_test_split(X, Y, Z, weights, test_size=0.3, random_state=seed)
+    X_dim = X_train.shape[1]
+    Y_dim = Y_train.shape[1]
+    Z_dim = Z_train.shape[1]
+    # Model 0
+    m = 0
+    train_dataset = TensorDataset(X_train, Y_train, Z_train)
+    sampler = WeightedRandomSampler(W_train,len(W_train))
+    train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
+    criterion = nn.MSELoss()
+    counter2 = 0
+    best_loss = np.inf
+    model = Autoencoder(X_dim, Y_dim, Z_dim, hidden_dim, latent_dim, dropout_rate, l2_reg).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=lr*0.1)
+    for epoch in range(num_epochs):
+        for xtr, ytr, ztr in train_loader:
+            xtr = xtr.float()
+            ytr = ytr.float()
+            yhat, zhat, l2_loss = model(xtr)
+            lossz = criterion(ztr, zhat)
+            lossy = criterion(ytr, yhat)
+            # wwz = epoch/1000
+            wwz = 1
+            wz = lossz / (wwz*lossz+lossy)
+            wy = 1-wz
+            loss = wy*lossy + wz*lossz + l2_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        with torch.no_grad():
+            yhate, zhate, l2_losse = model(X_test)
+            vlossz = criterion(Z_test, zhate)
+            vlossy = criterion(Y_test, yhate)
+            vloss = wy*vlossy + wz*vlossz + l2_losse
+        if epoch==0:
+            printlog(f'Model {seed}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+        if epoch>0:
+            if vloss < best_loss*early_tol:
+                if vloss < best_loss:
+                    best_loss = vloss
+                    best_model_state_dict = model.state_dict()
+                    counter = 0
+                else:
+                    counter += ((counter2+1)/10)
+            else:
+                counter += 1
+            if counter >= patience:
+                counter2 += 1
+                # if counter2 == 1:
+                    # printlog(f'Model {modeli}.{m} training, Epoch:[{epoch+1}|{num_epochs}|{patience2-counter2}], Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]')
+                counter = 0
+                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr'] * 0.5
+                model.load_state_dict(best_model_state_dict)
+            if counter2 > patience2:
+                model.load_state_dict(best_model_state_dict)
+                with torch.no_grad():
+                    yhate, zhate, l2_losse = model(X_test)
+                    vlossz = criterion(Z_test, zhate)
+                    vlossy = criterion(Y_test, yhate)
+                    vloss = wy*vlossy + wz*vlossz + l2_losse
+                break
+    printlog(f"Model {seed}.{m} stop, Epoch {epoch+1}, Loss:[{loss:.4f}|{lossy:.4f}|{lossz:.4f}], Validate:[{vloss:.4f}|{vlossy:.4f}|{vlossz:.4f}]")
+    return(model)
 
 ##########################################################################################
 # Trail
@@ -423,7 +525,7 @@ def train2(X, Y, Z, seed, hidden_dim, latent_dim, dropout_rate, l2_reg, lr, earl
 
 note = 'dg0'
 codelist = updatecodes()
-device = torch.device('cuda')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 seeds = [303,101,602,603,4,7,10,11,14,49]
 hidden_dim = 1024
 latent_dim = 128
@@ -435,7 +537,11 @@ early_tol = 1.1
 patience = 20
 patience2 = 10
 num_robots = 1000
-process = process1
+if note=='dg0':
+    process = process1
+else:
+    process = process2
+
 prd1 = 40
 prd2 = 5
 range0 = 1
@@ -449,7 +555,7 @@ print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
 codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
 codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
 raw = loaddata(date0,codes)
-for i in raw.columns.tolist()[2:6]: 
+for i in raw.columns.tolist()[1:6]:
     raw[i] = np.log(raw[i]+1)
 
 #Modeling
@@ -465,15 +571,14 @@ for trail in range(1):
     votess.append(votes)
 
 pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[2]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[2]-1):,:])
-pf2test = (pf2test-1)/2+pf2test 
+pf2test = (pf2test-1)/2+pf2test
 np.savez(f'model/{note}_{date1}.npz',votes=np.asarray(votess),codes=np.ravel(raws['close'].columns).tolist(),codes2=codes2,pf2test=pf2test)
+
 #Voting
-rlt1 = []
-rlt2 = []
-rlt3 = []
 file = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)
 codes = file['codes']
 codes2 = file['codes2']
+pf2test = file['pf2test']
 for i in range(file['votes'].shape[0]):
     votes = np.concatenate(file['votes'][i],axis=0)
     rois = []
@@ -489,14 +594,13 @@ for i in range(file['votes'].shape[0]):
     w = w/np.sum(w)
     rois = ((rois*w).sum(axis=1))
     rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
-    rlt = pd.DataFrame({'code':raws['close'].columns,
+    rlt = pd.DataFrame({'code':codes,
         'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
         'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-    rlt1.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    rlt1 = rlt
+    rlt = rlt[rlt['count']>=0]
     rlt['count'] = rlt.apply(lambda row: row['count'] if row['code'] in file['codes2'] else 0, axis=1)
-    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-    rlt2.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    rlt2 = rlt
     for i in range(len(codes)):
         if (codes[i] not in codes2):
             votes[:,:,i] = -1
@@ -513,178 +617,24 @@ for i in range(file['votes'].shape[0]):
     w = w/np.sum(w)
     rois = ((rois*w).sum(axis=1))
     rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
-    rlt = pd.DataFrame({'code':raws['close'].columns,
+    rlt = pd.DataFrame({'code':codes,
         'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
         'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-    rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-    rlt3.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
+    rlt3 = rlt
 
-rlt1 = pd.concat(rlt1,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-rlt2 = pd.concat(rlt2,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-rlt3 = pd.concat(rlt3,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-rlt1['share'] = rlt1['count']/np.sum(rlt1['count'])
-rlt2['share'] = rlt2['count']/np.sum(rlt2['count'])
-rlt3['share'] = rlt3['count']/np.sum(rlt3['count'])
 rlt3['buydate'] = rlt2['buydate'] = rlt1['buydate'] = date1
 rlt3['valdate'] = rlt2['valdate'] = rlt1['valdate'] = date2
-print(rlt1)
-print(rlt2)
-print(rlt3)
+rlt1['vote'] = 'rlt1'
+rlt2['vote'] = 'rlt2'
+rlt3['vote'] = 'rlt3'
+rlt = pd.concat((rlt1,rlt2,rlt3),axis=0)
+rlt = rlt.merge(rlt.groupby('vote').agg(index=('count', lambda x: np.quantile(x, 0.95))).reset_index(),on='vote')
+rlt['index'] = rlt['count']/rlt['index']
+rlt = rlt[(rlt['index']>1.5)&(rlt['mean']>0)]
 
+#Resulting
 
-##########################################################################################
-# Rolling
-##########################################################################################
-
-note = 'dg0'
-codelist = updatecodes()
-device = torch.device('cuda')
-seeds = [303,101,602,603,4,7,10,11,14,49]
-hidden_dim = 1024
-latent_dim = 128
-dropout_rate = 0.5
-l2_reg = 0.01
-num_epochs = 10000
-lr = 0.001
-early_tol = 1.1
-patience = 20
-patience2 = 10
-num_robots = 1000
-process = process1
-prd1 = 40
-prd2 = 5
-range0 = 1
-prop_votes = 0.05
-prop_robots = 0.1
-
-date0id = (np.asarray(codelist.tradedates)!='20230330').argsort()[0]
-date1id = (np.asarray(codelist.tradedates)!='20230713').argsort()[0]
-
-#Modeling Back
-
-for date0 in codelist.tradedates[date0id:date1id]:
-    date0,date1,date2 = codelist.getdates(date0)
-    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
-    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
-    codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
-    raw = loaddata(date0,codes)
-    for i in raw.columns.tolist()[2:6]: 
-        raw[i] = np.log(raw[i]+1)
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
-    votess = []
-    for trail in range(2):
-        print(f'trail {trail} @ {datetime.datetime.now()}')
-        models = []
-        for i in range(len(seeds)):
-            model = train2(X, Y, Z, seeds[i], hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
-            models.append(model)
-        votes = roboting(num_robots*len(models),models)
-        votess.append(votes)
-    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[2]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[2]-1):,:])
-    pf2test = (pf2test-1)/2+pf2test 
-    np.savez(f'model/{note}_{date1}.npz',votes=np.asarray(votess),codes=np.ravel(raws['close'].columns).tolist(),codes2=codes2,pf2test=pf2test)
- 
- #Modeling Evaluation
-
-rlts = []
-roi0 = [1,1,1]
-for date0 in codelist.tradedates[date0id:date1id]:
-    date0,date1,date2 = codelist.getdates(date0)
-    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
-    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
-    codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
-    raw = loaddata(date0,codes)
-    for i in raw.columns.tolist()[2:6]: 
-        raw[i] = np.log(raw[i]+1)
-    #Modeling
-    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
-    rlt1 = []
-    rlt2 = []
-    rlt3 = []
-    file = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)
-    codes = file['codes']
-    codes2 = file['codes2']
-    pf2test = file['pf2test']
-    for i in range(file['votes'].shape[0]):
-        votes = np.concatenate(file['votes'][i],axis=0)
-        rois = []
-        fvotes = []
-        for i in range(votes.shape[0]):
-            votesi = votes[i]
-            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
-            rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
-            fvotes.append(votesi[-1,:])
-        fvotes = np.asarray(fvotes)
-        rois = (np.asarray(rois))
-        w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
-        w = w/np.sum(w)
-        rois = ((rois*w).sum(axis=1))
-        rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
-        rlt = pd.DataFrame({'code':raws['close'].columns,
-            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
-            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-        rlt1.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
-        rlt['count'] = rlt.apply(lambda row: row['count'] if row['code'] in file['codes2'] else 0, axis=1)
-        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-        rlt2.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
-        for i in range(len(codes)):
-            if (codes[i] not in codes2):
-                votes[:,:,i] = -1
-        rois = []
-        fvotes = []
-        for i in range(votes.shape[0]):
-            votesi = votes[i]
-            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
-            rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
-            fvotes.append(votesi[-1,:])
-        fvotes = np.asarray(fvotes)
-        rois = (np.asarray(rois))
-        w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
-        w = w/np.sum(w)
-        rois = ((rois*w).sum(axis=1))
-        rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
-        rlt = pd.DataFrame({'code':raws['close'].columns,
-            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
-            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
-        rlt['index'] = rlt['count']/np.quantile(rlt['count'],0.95)
-        rlt3.append(rlt[(rlt['index']>1.5)&(rlt['mean']>1)])
-    rlt1 = pd.concat(rlt1,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-    rlt2 = pd.concat(rlt2,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-    rlt3 = pd.concat(rlt3,axis=0).groupby('code').agg(count=('count','sum')).sort_values('count',ascending=False)
-    rlt1['share'] = rlt1['count']/np.sum(rlt1['count'])
-    rlt2['share'] = rlt2['count']/np.sum(rlt2['count'])
-    rlt3['share'] = rlt3['count']/np.sum(rlt3['count'])
-    rlt3['buydate'] = rlt2['buydate'] = rlt1['buydate'] = date1
-    rlt3['valdate'] = rlt2['valdate'] = rlt1['valdate'] = date2
-    rlt1['vote'] = 'rlt1'
-    rlt2['vote'] = 'rlt2'
-    rlt3['vote'] = 'rlt3'
-    rlt = pd.concat((rlt1,rlt2,rlt3),axis=0).reset_index()
-    rois = []
-    for i in range(rlt.shape[0]):
-        codei = rlt['code'][i]
-        date1 = rlt['buydate'][i]
-        date2 = rlt['valdate'][i]
-        rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date1), end_date=int(date2), adjust="qfq")
-        if len(rawi)==0:
-            rois.append(1)
-        else:
-            rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
-            rawi = np.ravel(rawi.iloc()[:,[1,2]])
-            rois.append(rawi[len(rawi)-1]/rawi[0])
-    rlt['roi'] = rois
-    rltsum = rlt.groupby(['vote']).apply(lambda x: (x['share'] * x['roi']).sum()).reset_index(name='roi')
-    rltsum['agg'] = rltsum['roi'] * roi0
-    roi0 = rltsum['agg']
-    print(rlt)
-    print(rltsum)
-    rlts.append(rlt)
-
-rlts = pd.concat(rlts,axis=0)
-out = rlts.groupby(['vote', 'buydate']).apply(lambda x: (x['share'] * x['roi']).sum()).reset_index(name='result')
-pd.pivot_table(out, values='result', index=['buydate'], columns=['vote'])
-pd.pivot_table(out[(out['buydate'].astype(int))<=20230732], values='result', index=['buydate'], columns=['vote']).prod(axis=0)
-
-
+temp = rlt[(rlt['index']>1.5)&(rlt['mean']>0)]
+temp = temp.merge(temp.groupby('vote').apply(lambda x: (x['count'].sum())).reset_index(name='share'),on='vote')
+temp['share'] = temp['count']/temp['share']
+print(temp)
