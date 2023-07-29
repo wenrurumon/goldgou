@@ -638,3 +638,140 @@ temp = rlt[(rlt['index']>1.5)&(rlt['mean']>0)]
 temp = temp.merge(temp.groupby('vote').apply(lambda x: (x['count'].sum())).reset_index(name='share'),on='vote')
 temp['share'] = temp['count']/temp['share']
 print(temp)
+
+##########################################################################################
+# Rolling
+##########################################################################################
+
+date0id = (np.asarray(codelist.tradedates)!='20230330').argsort()[0]
+date1id = (np.asarray(codelist.tradedates)!='20230725').argsort()[0]
+
+#Modeling Back
+
+for date0 in codelist.tradedates[date0id:date1id]:
+    date0,date1,date2 = codelist.getdates(date0)
+    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
+    codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
+    raw = loaddata(date0,codes)
+    for i in raw.columns.tolist()[1:6]:
+        raw[i] = np.log(raw[i]+1)
+    #Modeling
+    datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
+    votess = []
+    for trail in range(1):
+        print(f'trail {trail} @ {datetime.datetime.now()}')
+        models = []
+        for i in range(len(seeds)):
+            model = train2(X, Y, Z, seeds[i], hidden_dim, latent_dim, dropout_rate, l2_reg, lr, early_tol, patience, patience2)
+            models.append(model)
+        votes = roboting(num_robots*len(models),models)
+        votess.append(votes)
+    pf2test = np.asarray(pd.concat((raws['close'].iloc()[-(votes.shape[2]-2):,:],raws['close'].iloc()[-1:,:]),axis=0))/np.asarray(raws['open'].iloc()[-(votes.shape[2]-1):,:])
+    pf2test = (pf2test-1)/2+pf2test
+    np.savez(f'model/{note}_{date1}.npz',votes=np.asarray(votess),codes=np.ravel(raws['close'].columns).tolist(),codes2=codes2,pf2test=pf2test)
+
+ #Modeling Evaluation
+
+rlts = []
+roi0 = pd.DataFrame({'vote': ['rlt' + str(i) for i in range(1, 4)], 'roi0': 1})
+for date0 in codelist.tradedates[date0id:date1id]:
+    date0,date1,date2 = codelist.getdates(date0)
+    print(f'know @ {date0}, buy @ {date1}, valid @ {date2}')
+    codes = list(set([elem for sublist in list(codelist.getcodes(date1).values())[:2] for elem in sublist]))
+    codes2 = list(set([elem for sublist in list(codelist.getcodes(date1).values())[2:] for elem in sublist]))
+    # raw = loaddata(date0,codes)
+    # for i in raw.columns.tolist()[1:6]:
+    #     raw[i] = np.log(raw[i]+1)
+    # datasets,X,Y,Z,X2,Zscaler,raws = process(raw,prd1,prd2,seeds)
+    #Voting
+    prd2 = 5
+    file = np.load(f'model/{note}_{date1}.npz',allow_pickle=True)
+    codes = file['codes']
+    codes2 = file['codes2']
+    pf2test = file['pf2test']
+    for i in range(file['votes'].shape[0]):
+        votes = np.concatenate(file['votes'][i],axis=0)
+        rois = []
+        fvotes = []
+        for i in range(votes.shape[0]):
+            votesi = votes[i]
+            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+            rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
+            fvotes.append(votesi[-1,:])
+        fvotes = np.asarray(fvotes)
+        rois = (np.asarray(rois))
+        w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
+        w = w/np.sum(w)
+        rois = ((rois*w).sum(axis=1))
+        rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
+        rlt = pd.DataFrame({'code':codes,
+            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+        rlt1 = rlt
+        rlt = rlt[rlt['count']>=0]
+        rlt['count'] = rlt.apply(lambda row: row['count'] if row['code'] in file['codes2'] else 0, axis=1)
+        rlt2 = rlt
+        for i in range(len(codes)):
+            if (codes[i] not in codes2):
+                votes[:,:,i] = -1
+        rois = []
+        fvotes = []
+        for i in range(votes.shape[0]):
+            votesi = votes[i]
+            votesi = (votesi >= np.quantile(votesi,q=1-prop_votes,axis=1,keepdims=True))
+            rois.append((votesi[range(prd2),:]*pf2test).sum(axis=1)/(votesi[range(prd2),:]).sum(axis=1))
+            fvotes.append(votesi[-1,:])
+        fvotes = np.asarray(fvotes)
+        rois = (np.asarray(rois))
+        w = np.asarray(np.ravel(range(prd2))).reshape(1,prd2)
+        w = w/np.sum(w)
+        rois = ((rois*w).sum(axis=1))
+        rlt = votes[rois>=np.quantile(rois,1-prop_robots),prd2,:]
+        rlt = pd.DataFrame({'code':codes,
+            'mean':rlt.mean(axis=0),'sd':rlt.std(axis=0),
+            'count':(rlt >= np.quantile(rlt,1-prop_votes,axis=1,keepdims=True)).sum(axis=0)}).sort_values(['count','mean'],ascending=False)
+        rlt3 = rlt
+    rlt3['buydate'] = rlt2['buydate'] = rlt1['buydate'] = date1
+    rlt3['valdate'] = rlt2['valdate'] = rlt1['valdate'] = date2
+    rlt1['vote'] = 'rlt1'
+    rlt2['vote'] = 'rlt2'
+    rlt3['vote'] = 'rlt3'
+    ref = pd.concat((rlt1,rlt2,rlt3),axis=0)[['code','buydate','valdate']].drop_duplicates()
+    rois = []
+    for i in range(ref.shape[0]):
+        codei = ref['code'][i]
+        date1 = ref['buydate'][i]
+        date2 = ref['valdate'][i]
+        rawi = ak.stock_zh_a_hist(symbol=codei, period="daily", start_date=int(date1), end_date=int(date2), adjust="qfq")
+        if len(rawi)==0:
+            rois.append(1)
+        else:
+            rawi.columns = ['date','open','close','high','low','pricechp','pricech','vol','val2','var','val']
+            roii = np.ravel(rawi.iloc()[:,[1,2]])
+            roii = roii[len(roii)-1]/roii[0]
+            rois.append(roii)
+    ref['roi'] = rois
+    rlt = pd.concat((rlt1,rlt2,rlt3),axis=0).merge(ref, on=['code', 'buydate', 'valdate'])
+    rlts.append(rlt)
+    rlt = rlt.merge(rlt.groupby('vote').agg(index=('count', lambda x: np.quantile(x, 0.95))).reset_index(),on='vote')
+    rlt['index'] = rlt['count']/rlt['index']
+    roi = rlt[(rlt['index']>1.5)&(rlt['mean']>1)]
+    roi = roi.groupby('vote').apply(lambda x: (x['roi'] * x['count']).sum() / x['count'].sum()).reset_index(name='roi')
+    roi0 = roi0.merge(roi,on='vote',how='left')
+    roi0['roi'] = roi0['roi'].fillna(1)
+    roi0['roi0'] = roi0['roi'] * roi0['roi0']
+    print(roi0)
+    roi0 = roi0[['vote','roi0']]
+
+rlts = pd.concat(rlts,axis=0)
+rlts.to_csv(f'test_{note}.csv')
+
+temp = rlts.merge(rlts.groupby(['buydate','vote']).agg(index=('count', lambda x:np.quantile(x,0.95))).reset_index(),on=['vote','buydate'])
+temp['index'] = temp['count']/temp['index']
+temp['count'] = 1 # np.sqrt(temp['count'])
+temp = temp[(temp['index']>1.5) & (temp['mean']>1)]
+temp = temp.groupby(['buydate','vote']).apply(lambda x: (x['roi']*x['count']).sum()/x['count'].sum()).reset_index(name='roi')
+temp.groupby('vote').agg(roi=('roi',lambda x: np.prod(x)))
+
+
