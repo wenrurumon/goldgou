@@ -13,38 +13,6 @@ library(randomForest)
 use_condaenv(condaenv='/home/huzixin/anaconda3/envs/test/bin/python',required=TRUE)
 setwd('/home/huzixin/documents/goldgou')
 
-cppFunction('arma::mat corpp(arma::mat X, arma::mat Y) {
-    arma::mat Xt = X.t();
-    arma::mat result = Xt*Y;
-    result /= (Y.n_rows - 1);
-    return result;
-}', depends = "RcppArmadillo")
-
-cppFunction('arma::mat cor_pvalue(arma::mat cor_mat, int n) {
-    arma::mat t_stat = cor_mat % sqrt((n - 2) / (1 - cor_mat % cor_mat));
-    arma::mat p_mat = 2 * arma::normcdf(-arma::abs(t_stat), 0, 1);
-    return p_mat;
-}', depends = "RcppArmadillo")
-
-cppFunction('
-NumericMatrix distCpp(NumericMatrix x1, NumericMatrix x2) {
-  int n1 = x1.nrow();
-  int n2 = x2.nrow();
-  int p = x1.ncol();
-  NumericMatrix dists(n1, n2);
-  for (int i = 0; i < n1; i++) {
-    for (int j = 0; j < n2; j++) {
-      double dist = 0.0;
-      for (int k = 0; k < p; k++) {
-        dist += pow(x1(i, k) - x2(j, k), 2);
-      }
-      dists(i, j) = sqrt(dist);
-    }
-  }
-  
-  return dists;
-}')
-
 ########################################################################################################################
 
 # #Get Historical Data
@@ -62,8 +30,8 @@ NumericMatrix distCpp(NumericMatrix x1, NumericMatrix x2) {
 #     Sys.sleep(0.01)
 #     x <- ak$stock_zh_a_hist(symbol=codei,
 #                             period='daily',
-#                             start_date=20210101,
-#                             end_date=gsub('-','',Sys.Date()), adjust='qfq') %>%
+#                             start_date=20180101,
+#                             end_date=gsub('-','',Sys.Date()), adjust='hfq') %>%
 #       mutate(code=codei)
 #     x[[1]] <- sapply(x[[1]],paste)
 #     x
@@ -72,7 +40,7 @@ NumericMatrix distCpp(NumericMatrix x1, NumericMatrix x2) {
 # 
 # #Update data
 # hisdata <- hisdata %>% merge(allcodes)
-# write.csv(hisdata,'hisdata210101.csv')
+# write.csv(hisdata,'hfq180101.csv')
 
 #Load Data
 hisdata <- fread('hfq180101.csv')[,-1]
@@ -114,17 +82,20 @@ for(i in 2:nrow(close)){
 #量价猩基金 scale_log
 ########################################################################################################################
 
-roi <- close[2:nrow(close),]/open[1:(nrow(close)-1),]
+k <- 5
+roi <- close[k:nrow(close),]/open[1:(nrow(close)-(k-1)),]
 pop <- apply(val,1,function(x){x/sum(x,na.rm=T)}) %>% t
 pop <- pop[2:nrow(pop),]-pop[1:(nrow(pop)-1),]
+pop <- pop[-(1:(nrow(pop)-nrow(roi))),]
 
 #回测用数据
 
-b <- 39
+b <- 29
+codek <- 20
 
 system.time(
   datapool <- lapply((b+3):nrow(roi),function(i){
-    codei <- unique((jgp %>% filter(did>=i-20,did<=i))$code) %>% paste
+    codei <- unique((jgp %>% filter(did>=i-codek,did<i))$code) %>% paste
     roi0 <- roi[i-(b:0+2),codei]
     pop0 <- pop[i-(b:0+2),codei]
     roi2 <- roi[i,codei]
@@ -146,7 +117,6 @@ datapool <- datapool[(which(sapply(datapool,function(x){nrow(x$Y)})>1)[1]+20):le
 
 #回测
 
-k <- 2
 # testperiod <- length(datapool)-200:0
 testperiod <- (k+1):length(datapool)
 
@@ -183,46 +153,81 @@ bench %>%
 #       )
 #       xk$roidist <- pnorm(scale(log(xk$roidist)))
 #       xk$popdist <- pnorm(scale(log(xk$popdist)))
-#       xk <- xk %>%
-#         mutate(dist=roidist*popdist)
 #       xk
 #     })) %>%
 #       merge(y.obs) %>%
-#       filter(roidist<=0.01,popdist<=0.01) %>%
+#       filter(roidist<=0.05,popdist<=0.05) %>%
 #       group_by(obs,buy,sell,code) %>%
 #       summarise(mean=mean(refroi),win=mean(refroi>1),actual=mean(roi)) %>%
 #       filter(mean>1,win>0.5) %>%
-#       arrange(desc(mean)) 
+#       arrange(desc(mean))
 #   })
 # )
-# save(tests,file='trace_scalelog_0921b39k2.rda')
-load('trace_scalelog_0921b29k2.rda')
-
-valid <- rbindlist(lapply(tests,head,5)) %>%
-  group_by(obs) %>%
-  summarise(actual=mean(actual)) %>%
-  group_by(obs=substr(obs,1,6)) %>%
-  summarise(actual=prod((actual-1)/2+1,na.rm=T),n()) %>%
-  merge(
-    bench %>%
-      group_by(obs=substr(obs,1,6)) %>%
-      summarise(bench=prod((bench-1)/2+1))
-  ) 
-valid$cumactual <- cumprod(valid$actual)
-valid$cumbench <- cumprod(valid$bench)
+# save(tests,file='trace_scalelog_0921b29k2ck10.rda')
+load('trace_scalelog_0921b29k2ck10.rda')
 
 rlt <- rbindlist(lapply(tests,head,100))
-# write.csv(rlt,'trace_0922slogb19k2.csv')
-
-plot.ts(valid$cumactual,col=2); lines(valid$cumbench)
+# write.csv(rlt,'trace_scalelog_0921b29k2ck10.csv')
 
 rbindlist(lapply(tests,head,5)) %>%
   group_by(obs) %>%
   summarise(actual=mean(actual)) %>%
-  group_by(obs=substr(obs,1,1)) %>%
+  group_by(obs=substr(obs,1,4)) %>%
   summarise(actual=prod((actual-1)/2+1,na.rm=T),n()) %>%
   merge(
     bench %>%
-      group_by(obs=substr(obs,1,1)) %>%
+      group_by(obs=substr(obs,1,4)) %>%
       summarise(bench=prod((bench-1)/2+1))
-  ) 
+  )
+
+#新数据
+
+b <- 29
+k <- 2
+codek <- 20
+
+roi <- close[k:nrow(close),]/open[1:(nrow(close)-(k-1)),]
+pop <- apply(val,1,function(x){x/sum(x,na.rm=T)}) %>% t
+pop <- pop[2:nrow(pop),]-pop[1:(nrow(pop)-1),]
+if(nrow(pop)>nrow(roi)){pop <- pop[-(1:(k-2)),]}
+
+i <- nrow(roi)
+print(range((jgp %>% filter(did>=i-codek+2,did<i+2))$date))
+codei <- unique((jgp %>% filter(did>=i-codek+2,did<i+2))$code) %>% paste
+roi0 <- roi[i-(b:0+k),codei]
+pop0 <- pop[i-(b:0+k),codei]
+roi2 <- roi[i-(b:0),codei]
+pop2 <- pop[i-(b:0),codei]
+x.ref <- (rbind(roi=roi0,pop=pop0))
+x.obs <- (rbind(roi=roi2,pop=pop2))
+y.ref <- data.table(
+  code=colnames(roi0),
+  obs=as.numeric(rownames(roi)[i-2]),
+  buy=as.numeric(rownames(roi)[i-1]),
+  sell=as.numeric(rownames(roi)[i]),
+  roi=roi2[nrow(roi2),]
+)
+
+do.call(rbind,lapply(1:ncol(x.obs),function(j){
+  xj.dist <- (x.obs[,j]-x.ref)^2
+  n <- nrow(xj.dist) / 2
+  xk <- data.table(
+    code = colnames(x.obs)[j],
+    roidist = colSums(xj.dist[1:n, ]),
+    popdist = colSums(xj.dist[(n + 1):(2 * n), ]),
+    y.ref %>% select(refcode=code,refroi=roi)
+  )
+  xk$roidist <- pnorm(scale(log(xk$roidist)))
+  xk$popdist <- pnorm(scale(log(xk$popdist)))
+  xk
+})) %>%
+  filter(roidist<=0.05,popdist<=0.05) %>%
+  group_by(code) %>%
+  summarise(mean=mean(refroi),win=mean(refroi>1)) %>%
+  filter(mean>1,win>0.5) %>%
+  merge(
+    unique(rawhis %>% select(code,name))
+  ) %>%
+  arrange(desc(mean)) %>%
+  head(20)
+
