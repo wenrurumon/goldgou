@@ -27,13 +27,17 @@ jgp <- read.csv('data/raw_grade.csv')[,-1] %>%
 
 #Merge Data
 
-allcode <- allcode %>% filter(code%in%jgp$code)
 jgp <- jgp %>% filter(code%in%allcode$code)
 
 ddata <- fread('data/hisdata.csv')[,-1] %>%
   select(date=日期,code,open=开盘,close=收盘,high=最高,low=最低,val=成交额,vol=成交量) %>%
-  mutate(date=as.numeric(gsub('-','',date))) %>%
-  filter(code%in%allcode$code)
+  mutate(date=as.numeric(gsub('-','',date))) 
+
+code60 <- ddata %>%
+  filter(date<=rev(sort(unique(ddata$date)))[60]) %>%
+  group_by(code) %>%
+  summarise(n=n_distinct(date))
+ddata <- ddata %>% filter(code%in%code60$code)
 
 datemap <- sort(unique(ddata$date))
 datemap <- data.table(date=datemap,did=1:length(datemap))
@@ -79,8 +83,8 @@ val <- apply(val,2,function(x){
 ################################################################################
 #Module
 
-ogou <- function(iminus,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05){
-  # iminus <- 1000
+jgou <- function(iminus,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05){
+  # iminus <- 32
   # b <- 29
   # k <- 2
   # codek0 <- 15
@@ -94,14 +98,14 @@ ogou <- function(iminus,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.
   i <- nrow(roi)-iminus
   startdid0 <- datemap$date[which(datemap$date==rownames(roi)[i])-codek0-k]
   enddid0 <- datemap$date[which(datemap$date==rownames(roi)[i])-k]
-  jgpi0 <- jgp %>% filter(date>startdid0,date<=enddid0)
+  jgpi0 <- jgp %>% filter(date>startdid0,date<=enddid0,code%in%colnames(close))
   codei0 <- unique(jgpi0$code) %>% paste
   roi0 <- roi[i-(b:0+k),codei0]
   pop0 <- pop[i-(b:0+k),codei0]
   roi1 <- roi[i-(b:0),codei0]
   startdid2 <- datemap$date[which(datemap$date==rownames(roi)[i])-codek2]
   enddid2 <- datemap$date[which(datemap$date==rownames(roi)[i])]
-  jgpi2 <- jgp %>% filter(date>startdid2,date<=enddid2)
+  jgpi2 <- jgp %>% filter(date>startdid2,date<=enddid2,code%in%colnames(close))
   codei2 <- unique(jgpi2$code) %>% paste
   roi2 <- roi[i-(b:0),codei2]
   pop2 <- pop[i-(b:0),codei2]
@@ -140,199 +144,38 @@ ogou <- function(iminus,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.
     arrange(desc(mean)) 
 }
 
-ygou <- function(iminus){
+ygou <- function(iminus,k=2){
   
-  i <- nrow(close)-iminus
+  # iminus <- 1
+  # k <- 2
+  
+  obs <- nrow(close)-iminus
+  buy <- obs+1
+  sell <- obs+k
+  
+  yg0 <- data.table(
+    close[obs,] > open[obs,],
+    val[obs,] > val[obs-1,],
+    high[obs,]/close[obs-1,]>=ifelse(floor(as.numeric(colnames(close))/10000)%in%c(30,68),1.198,1.098)
+  )
   
   yg1 <- data.table(
-    # T-1日收盘价一阶导大于T-1日收盘价一阶导20日均线
-    (close[i,]-close[i-1,])>(colMeans(close[i-19:0,]-close[i-20:1,])),
-    # T-1日收盘价一阶导大于0.01
-    close[i,]-close[i-1,]>0.01,
-    # T-1日成交额大于T-1日成交额20日均线
-    val[i,]>(colMeans(val[i-19:0,])),
-    # T-1日收盘价小于最高价
-    close[i,]<high[i,],
-    # T-1日开盘价小于收盘价
-    close[i,]>open[i,],
-    # T-1日收盘价一阶导大于T-2日收盘价一阶导
-    (close[i,]-close[i-1,])>(close[i-1,]-close[i-2,]),
-    # T-1日成交额大于T-2日成交额
-    val[i,]>val[i-1,],
-    # T-1日收盘价大于T-2日收盘价
-    close[i,]>close[i-1,],
-    # T-2日收盘价一阶导大于T-2日收盘价一阶导20日均线*2
-    (close[i-1,]-close[i-2,])>(colMeans(close[i-20:1,]-close[i-21:2,])*2),
-    # T-1日K线实体部分*2>上下引线部分之和
-    (abs(open[i,]-close[i,])*2)>
-      (abs(ifelse(open[i,]>close[i,],open[i,],close[i,])-high[i,])+
-         abs(ifelse(open[i,]<close[i,],open[i,],close[i,])-low[i,]))
+    lower = ifelse((close[obs-1,]+close[obs,])/2>close[obs,]*0.95,close[obs,]*0.95,(close[obs-1,]+close[obs,])/2),
+    upper = close[obs,]*1.03
   )
   
-  yg2 <- data.table(
-    # T-1日收盘价一阶导大于T-1日收盘价一阶导20日均线
-    (close[i,]-close[i-1,])>(colMeans(close[i-19:0,]-close[i-20:1,])),
-    # T-1日成交额大于T-1日成交额20日均线*2
-    val[i,]>(colMeans(val[i-19:0,])*2),
-    # T-1日开盘价小于收盘价
-    close[i,]>open[i,],
-    # T-1日收盘价大于T-2日收盘价
-    close[i,]>close[i-1,],
-    # T-2日收盘价一阶导大于T-2日收盘价一阶导20日均线
-    (close[i-1,]-close[i-2,])>(colMeans(close[i-20:1,]-close[i-21:2,])),
-    # T-2日涨幅超过9.8%
-    close[i-1,]/close[i-2,]>1.098,
-    # T-1日K线实体部分*2>上下引线部分之和
-    (abs(open[i,]-close[i,])*2)>
-      abs(ifelse(open[i,]>close[i,],open[i,],close[i,])-high[i,])+abs(ifelse(open[i,]<close[i,],open[i,],close[i,])-low[i,])
-  )
-
-  yg3 <- data.table(
-    # T-1日涨幅超过5%
-    close[i,]/close[i-1,]>1.05,
-    # T-2日涨幅小于0
-    close[i-1,]-close[i-2]>0,
-    # T-3日涨幅超过5%
-    close[i-2,]/close[i-3,]>1.05,
-    # T-1日成交额大于T-2日
-    val[i,]>val[i-1,],
-    # T-3日成交额大于T-2日
-    val[i-2,]>val[i-1,],
-    # T-1日上引线不超过2.5%
-    high[i,]/ifelse(open[i,]>close[i,],open[i,],close[i,])<1.025
-  )
-  
-  idx <- close[i,]-2*colMeans(close[i-19:0,])
-  
-  obsmap %>%
-    merge(
-      data.table(
-        obs=as.numeric(rownames(close)[i]),
-        code=as.numeric(colnames(close)),
-        mean=close[i,]-2*colMeans(close[i-19:0,]),
-        yg1=rowMeans(yg1),yg2=rowMeans(yg2),yg3=rowMeans(yg3)
-      ) %>% 
-        mutate(
-          win=((yg1==1)+(yg2==1)+(yg3==1))/3
-        )
-    ) %>%
-    filter(win>0) %>%
-    arrange(desc(mean)) %>%
-    select(obs,buy,sell,code,mean,win)
-  
-}
-
-ngou <- function(iminus,b=29,k=2,thres_valp=0.2,thres_roi=0.05,thres_pop=0.05){
-  
-  # 参数输入
-  iminus <- 2
-  b <- 5
-  k <- 2
-  thres_valp <- 0.2
-  thres_roi <- 0.05
-  thres_pop <- 0.05
-  
-  print(paste(iminus,Sys.time()))
-  
-  #准备数据
-  today <- close[k:nrow(close),]/open[k:nrow(close),] 
-  roi <- close[k:nrow(close),]/open[1:(nrow(close)-(k-1)),]
-  valp <- t(apply(val[-1:-(k-1),],1,function(x){x/sum(x)}))
-  pop <- val[-1:-(k-1),]
-  
-  #准备池子
-  
-  i <- nrow(roi)-iminus
-  sel1 <- which((today[i,]>1)&(pop[i,]>pop[i-1,])&(valp[i,]>quantile(valp[i,],thres_valp)))
-  roi1 <- roi[i-(b:0),sel1] 
-  pop1 <- pop[i-(b:0),sel1] 
-  pop1 <- t(t(pop1)/pop1[nrow(pop1),])
-  roi1 <- log(roi1)
-  pop1 <- log(pop1)
-  sel0 <- which((today[i-k,]>1)&(pop[i-k,]>pop[i-k-1,])&(valp[i-k,]>quantile(valp[i-k,],thres_valp)))
-  roi0 <- roi[i-(b:0+k),sel0]
-  pop0 <- pop[i-(b:0+k),sel0]
-  pop0 <- t(t(pop0)/pop0[nrow(pop0),])
-  roi0 <- log(roi0)
-  pop0 <- log(pop0)
-  y0 <- data.table(
-    refcode=as.numeric(names(sel0)),
-    roi=roi[i,sel0]
-  )
-  
-  #计算距离
-  
-  dist.roi <- apply(roi1,2,function(x){colMeans((x-roi0)^2)}) %>%
-    log %>% scale %>% pnorm %>%
-    melt() %>%
-    select(refcode=1,code=2,droi=3)
-  dist.pop <- apply(pop1,2,function(x){colMeans((x-pop0)^2)}) %>%
-    log %>% scale %>% pnorm %>%
-    melt() %>%
-    select(refcode=1,code=2,dpop=3)
-  
-  #筛选股票
-  
-  obsmap %>%
-    merge(
-      data.table(
-        obs=as.numeric(max(rownames(roi1))),
-        data.table(
-          dist.roi,
-          dpop=as.numeric(dist.pop$dpop)
-        ) %>%
-          merge(y0)  %>%
-          filter(droi<thres_roi,dpop<thres_pop) %>%
-          group_by(code) %>%
-          summarise(mean=mean(roi),win=mean(roi>0),n=n(),sd=sd(roi)) %>%
-          filter(win>0.5,mean>1) 
-      ),all.y=T
-    ) %>%
-    arrange(desc(mean-sd))
-  
-}
-
-validtest <- function(tests,scale=4,k=2,h=5){
-  
-  # scale <- 8
-  # k <- 2
-  # h <- 5
-  
-  trans <- rbindlist(lapply(tests,function(x){head(x,h)})) %>%
-    filter(!is.na(sell))
-  
-  trans <- data.table(
-    trans,
-    t(
-      sapply(1:nrow(trans),function(i){
-        c(
-          open=open[paste(trans$buy[i]),paste(trans$code[i])],
-          close=close[paste(trans$sell[i]),paste(trans$code[i])]
-        )
-      })
-    )
+  data.table(
+    code=as.numeric(colnames(close)),
+    obs=as.numeric(rownames(close)[obs]),
+    yg0=rowMeans(yg0)==1,
+    yg1
   ) %>%
-    mutate(roi=close/open) %>%
-    mutate(roi=(roi-1)/k+1) %>%
-    group_by(obs,buy,sell) %>%
-    summarise(roi=mean(roi))
-  
-  obsmap %>%
-    filter(obs>=min(trans$obs)) %>%
-    merge(
-      data.table(
-        sell=as.numeric(rownames(close)[-1:-k]),
-        bench=rowMeans(close[-1:-k,]/open[-(nrow(open)-0:(k-1)),],na.rm=T)
-      ) %>%
-        mutate(bench=(bench-1)/k+1)
-    ) %>%
-    merge(trans,all.x=T,by=c('obs','buy','sell')) %>%
-    group_by(obs=substr(obs,1,scale)) %>%
-    summarise(miss=mean(is.na(roi)),roi=prod(roi,na.rm=T),bench=prod(bench))
-  
+    filter(yg0) %>%
+    select(code,obs,lower,upper)
+
 }
 
-validtest <- function(tests,scale=4,k=2,h=5,gaokai_rate=1.03){
+valid <- function(tests,k=2,h=5,gaokai_rate=1.03){
   
   # scale <- 8
   # k <- 2
@@ -389,20 +232,9 @@ validtest <- function(tests,scale=4,k=2,h=5,gaokai_rate=1.03){
     ) %>%
     mutate(roi=(roi-1)/k+1) %>%
     group_by(obs,buy,sell) %>%
-    summarise(roi=mean(roi))
+    summarise(roi=mean(roi),code=paste(code,collapse=','))
   
-  obsmap %>%
-    filter(obs>=min(trans$obs)) %>%
-    merge(
-      data.table(
-        sell=as.numeric(rownames(close)[-1:-k]),
-        bench=rowMeans(close[-1:-k,]/open[-(nrow(open)-0:(k-1)),],na.rm=T)
-      ) %>%
-        mutate(bench=(bench-1)/k+1)
-    ) %>%
-    merge(trans,all.x=T,by=c('obs','buy','sell')) %>%
-    group_by(obs=substr(obs,1,scale)) %>%
-    summarise(miss=mean(is.na(roi)),roi=prod(roi,na.rm=T),bench=prod(bench))
+  trans
   
 }
 
@@ -444,39 +276,65 @@ darisk <- function(k=5,ncode=50){
 ################################################################################
 #Main 
 
-system.time(tests_ogou <- lapply(60:0,ogou,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05))
-validtest(tests_ogou,6,2,5)
-
-system.time(tests_ygou <- lapply(1600:0,ygou))
-validtest(tests_ygou,1,2,5) %>% as.data.frame
-
-ygou(1)
-
-
-ygou(1000)
-ogou(iminus=1000,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05)
+risk <- darisk(2,50)
+print(ifelse(tail(risk$risk,1)>=0.6,'JGou','YGou'))
 
 list(
-  ngou(3,3,2,0.5,0.05,0.05) %>% 
-    merge(allcode,by='code') %>%
-    arrange(desc(mean-sd))
-) %>%
-  validtest(1,2,5)
+  strategy=ifelse(tail(risk$risk,1)>=0.6,'JGou','YGou'),
+  jingou=jgou(0,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05) %>% merge(allcode) %>% arrange(desc(mean)),
+  yingou=ygou(0,k=2) %>% merge(allcode) %>% filter(!grepl('ST|退',name))
+)
 
-tests <- lapply(3:0,ngou,b=9,k=2,thres_valp=0.2,thres_roi=0.05,thres_pop=0.05)
-validtest(tests,1,2,5)
+# system.time(tests_jg <- lapply(1600:0,function(i){
+#   print(paste(i,Sys.time()))
+#   jgou(i,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05)
+# }))
 
-tests_old <- lapply(60:0,ogou,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05)
-validtest(tests_old,1,2,5)
-
-ogou(iminus=0,b=9,k=2,codek0=15,codek2=10,thres_roi=0.1,thres_pop=0.1)
-# 
 # system.time(
-#   tests <- lapply(1600:0,function(i){
-#     ogou(iminus=i,b=29,k=2,codek0=15,codek2=10,thres_roi=0.05,thres_pop=0.05)
+#   tests_yg <- lapply(1600:3,function(iminus){
+#     testi <- ygou(iminus) %>% merge(allcode) %>% merge(obsmap,by='obs')
+#     testi$open1 <- open[unique(paste(testi$buy)),paste(testi$code)]
+#     testi <- testi %>%
+#       filter(!grepl('ST|退',name)) %>%
+#       filter(open1>=lower,open1<=upper)
+#     testi %>% select(obs,buy,sell,code) %>% mutate(mean=1.1,win=1)
 #   })
 # )
-# 
-# validtest(tests,4,2,5,1.03)
-# save(tests,file='result/tests1026_29_2_15_10_005_005.rda')
-# rbindlist(tests) %>% write.csv('result/test.csv')
+
+# save(tests_jg,tests_yg,file='result/test1101_gou.rda')
+load('result/test1101_gou.rda')
+
+valid(tests_jg,2,5)
+valid(tests_yg,2,5)
+
+################################################################################
+
+#Yingou
+
+test <- obsmap %>%
+  merge(
+    risk,by='obs'
+  ) %>%
+  merge(
+    valid(tests_jg) %>% as.data.frame %>% select(obs,jg=roi),all.x=T
+  ) %>%
+  merge(
+    valid(tests_yg) %>% as.data.frame %>% select(obs,yg=roi),all.x=T
+  ) 
+
+test <- test[-1:-(min(which(rowMeans(is.na(test[,-1:-4]))<1))-1),] %>%
+  mutate(roi=ifelse(risk>=0.6,yg,jg)) %>%
+  group_by(obs=floor(obs/1)) %>%
+  summarise(miss=mean(is.na(roi)),JinGou=prod(jg,na.rm=T),YinGou=prod(yg,na.rm=T),JieheGou=prod(roi,na.rm=T)) 
+
+test[,-1:-2] <- apply(test[,-1:-2],2,function(x){
+  cumprod(ifelse(is.na(x),1,x))
+})
+
+test %>% 
+  melt(id=1:2) %>%
+  mutate(obs=as.Date(strptime(obs,format='%Y%m%d'))) %>%
+  ggplot() + 
+  geom_line(aes(x=obs,y=value,colour=variable)) +
+  theme_bw()
+
