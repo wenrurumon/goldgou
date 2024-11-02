@@ -60,6 +60,9 @@ high <- ddata %>% acast(date~code,value.var='high')
 low <- ddata %>% acast(date~code,value.var='low')
 val[is.na(val)] <- 0
 
+close[close<0] <- NA
+open[open<0] <- NA
+
 for(i in 2:nrow(close)){
   close[i,] <- ifelse(is.na(close[i,]),close[i-1,],close[i,])
   open[i,] <- ifelse(is.na(open[i,]),open[i-1,],open[i,])
@@ -304,14 +307,35 @@ list(
 # save(tests_jg,tests_yg,file='result/test1101_gou.rda')
 load('result/test1101_gou.rda')
 
-valid(tests_jg,2,5)
-valid(tests_yg,2,5)
-
 ################################################################################
 
 #Yingou
 
+bench <- obsmap %>%
+  merge(
+    melt(close[-1,]/open[-nrow(open),]) %>%
+      select(sell=1,code=2,bench=3) %>%
+      mutate(bench=ifelse(is.na(bench),1,bench))    
+  ) %>%
+  merge(
+    val %>%
+      melt() %>%
+      select(obs=1,code=2,val=3) %>%
+      merge(
+        val %>%
+          melt() %>%
+          select(obs=1,code=2,val=3) %>%
+          group_by(obs) %>%
+          summarise(valp=quantile(val,1-100/ncol(close),na.rm=T))
+      ) %>%
+      filter(val>=valp),
+    by=c('obs','code')
+  ) %>%
+  group_by(obs) %>%
+  summarise(bench=mean((bench-1)/2+1))
+
 test <- obsmap %>%
+  filter(floor(obs/10000)>=2019) %>%
   merge(
     risk,by='obs'
   ) %>%
@@ -319,22 +343,22 @@ test <- obsmap %>%
     valid(tests_jg) %>% as.data.frame %>% select(obs,jg=roi),all.x=T
   ) %>%
   merge(
-    valid(tests_yg) %>% as.data.frame %>% select(obs,yg=roi),all.x=T
-  ) 
+    valid(tests_yg,h=Inf) %>% as.data.frame %>% select(obs,yg=roi),all.x=T
+  ) %>%
+  merge(bench) %>%
+  mutate(roi=ifelse(risk>=0.6,yg,jg)) 
 
-test <- test[-1:-(min(which(rowMeans(is.na(test[,-1:-4]))<1))-1),] %>%
-  mutate(roi=ifelse(risk>=0.6,yg,jg)) %>%
-  group_by(obs=floor(obs/1)) %>%
-  summarise(miss=mean(is.na(roi)),JinGou=prod(jg,na.rm=T),YinGou=prod(yg,na.rm=T),JieheGou=prod(roi,na.rm=T)) 
+test %>%
+  group_by(obs=floor(obs/10000)) %>%
+  summarise(miss=mean(is.na(roi)),JinGou=prod(jg,na.rm=T),YinGou=prod(yg,na.rm=T),DualGou=prod(roi,na.rm=T),bench=prod(bench,na.rm=T))
 
-test[,-1:-2] <- apply(test[,-1:-2],2,function(x){
+data.table(test[,1:4],apply(test[,-1:-4],2,function(x){
   cumprod(ifelse(is.na(x),1,x))
-})
-
-test %>% 
-  melt(id=1:2) %>%
+})) %>%
+  select(obs,buy,sell,risk,JinGou=jg,YinGou=yg,DualGou=roi,Benchmark=bench) %>%
+  melt(id=1:4) %>%
   mutate(obs=as.Date(strptime(obs,format='%Y%m%d'))) %>%
   ggplot() + 
   geom_line(aes(x=obs,y=value,colour=variable)) +
   theme_bw()
-
+  
