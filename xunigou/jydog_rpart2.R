@@ -28,7 +28,6 @@ updatedata <- function(start_date){
     select(code=2,name=3) %>%
     unique()
   write.csv(allcodes,'data/allcodes.csv')
-  # allcodes <- fread('data/allcodes.csv')[,-1]
   
   #Get His Data
   
@@ -140,210 +139,244 @@ jg<- t(t(jglist2)/rowSums(jglist2))
 #导入模型
 
 dir('result',pattern='models')
-system.time(load('result/models_test.rda'))
+system.time(load('result/models_250415.rda'))
 
 #昨天买什么
 
-onite1 <- data.table(
-  code=as.numeric(colnames(close)),
-  onite0=open[nrow(open),]/close[nrow(close)-1,]
-)
-
-xidx <- rev(rownames(close))[1:20+1]
-xopen <- open[xidx[1:5],,drop=F] %>% t
-colnames(xopen) <- paste0('open',1:5)
-xclose <- close[xidx[1:5],,drop=F] %>% t
-colnames(xclose) <- paste0('close',1:5)
-xlow <- low[xidx[1:5],,drop=F] %>% t
-colnames(xlow) <- paste0('low',1:5)
-xhigh <- high[xidx[1:5],,drop=F] %>% t
-colnames(xhigh) <- paste0('high',1:5)
-xval <- val[xidx[1:5],,drop=F] %>% t
-colnames(xval) <- paste0('val',1:5)
-xjg <- jg[xidx[1:5],,drop=F] %>% t
-colnames(xjg) <- paste0('jg',1:5)
-
-X <- data.table(
-  code=as.numeric(rownames(xopen)),
-  obs=max(xidx),
-  xopen,xclose,xlow,xhigh,xval,xjg,
-  jg10=colMeans(jg[xidx[1:10],,drop=F],na.rm=T)
-) %>%
-  merge(
-    onite1 %>% mutate(code=as.numeric(code))
-  ) %>%
-  mutate(open0=close1*onite0) %>%
-  select(-onite0)
-
-X <- X %>%
-  merge(
-    X %>%
-      group_by(obs) %>%
-      summarise(
-        btoday1=mean(close1/open1,na.rm=T), 
-        bonite0=mean(open0/close1,na.rm=T),
-        broi1=mean(close1/open2,na.rm=T),
-        broi5=mean(close1/open5,na.rm=T)
-      ) %>%
-      mutate(
-        class=(btoday1>1)*1000+(bonite0>1)*100+(broi1>1)*10+(broi5>1)*1
-      ),
-    by='obs'
-  ) %>%
-  mutate(
-    x1=open1/open0,
-    x2=close1/open0,
-    x3=high1/open0,
-    x4=low1/open0,
-    x5=jg1,
-    x6=jg2,
-    x7=jg3+jg4+jg5,
-    x8=jg10,
-    x9=close1/(close2+close3+close4+close5)*4
-  ) %>%
-  mutate(x10=ifelse(floor(as.numeric(code) / 10000) %in% c(30, 68), 1.198, 1.098)) %>%
-  select(obs,code,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,btoday1,bonite0,broi1,broi5,class)
-
-k <- match(unique(X$class),classlist)
-
-system.time(
-  rlti <- lapply(1:length(models_xjj[[k]]),function(i){
-    modeli1 <- models_xjj[[k]][[i]]
-    modeli2 <- models_idx[[k]][[i]]
-    out1 <- predict(modeli1,newdata=X)
-    out2 <- predict(modeli2,newdata=X)
-    data.table(i=i,id=1:length(out1),pxjj=out1,pidx=out2)
-  }) %>%
-    rbindlist %>%
-    group_by(id) %>%
-    summarise(mxjj=mean(pxjj),midx=mean(pidx),sxjj=sd(pxjj),sidx=sd(pidx),wxjj=mean(pxjj>1),widx=mean(pidx>1))
-)
-
-data.table(X[,1:2],rlti) %>%
-  merge(
-    data.table(
-      code=as.numeric(colnames(close)),
-      close1=close[nrow(close)-1,],
-      open0=open[nrow(open),],
-      close0=close[nrow(close),]
-    ),
-    by='code'
-  ) %>%
-  merge(
-    allcodes,by='code'
-  ) %>%
-  filter(mxjj>1,open0<close1,widx>0.7,wxjj>0.7) %>%
-  arrange(desc(midx)) %>%
-  mutate(roi=close0/open0) %>%
-  head(20)
+list1 <- function(){
   
-#今日最新数据 要925才能开始跑
-
-onite0 <- rbind(
-  ak$stock_sh_a_spot_em(),
-  ak$stock_sz_a_spot_em()
-) %>%
-  select(
-    code=`代码`,
-    name=`名称`,
-    open0=`今开`,
-    close1=`昨收`
+  onite1 <- data.table(
+    code=as.numeric(colnames(close)),
+    onite0=open[nrow(open),]/close[nrow(close)-1,]
+  )
+  
+  xidx <- rev(rownames(close))[1:20+1]
+  xopen <- open[xidx[1:5],,drop=F] %>% t
+  colnames(xopen) <- paste0('open',1:5)
+  xclose <- close[xidx[1:5],,drop=F] %>% t
+  colnames(xclose) <- paste0('close',1:5)
+  xlow <- low[xidx[1:5],,drop=F] %>% t
+  colnames(xlow) <- paste0('low',1:5)
+  xhigh <- high[xidx[1:5],,drop=F] %>% t
+  colnames(xhigh) <- paste0('high',1:5)
+  xval <- val[xidx[1:5],,drop=F] %>% t
+  colnames(xval) <- paste0('val',1:5)
+  xjg <- jg[xidx[1:5],,drop=F] %>% t
+  colnames(xjg) <- paste0('jg',1:5)
+  
+  X <- data.table(
+    code=as.numeric(rownames(xopen)),
+    obs=max(xidx),
+    xopen,xclose,xlow,xhigh,xval,xjg,
+    jg10=colMeans(jg[xidx[1:10],,drop=F],na.rm=T)
   ) %>%
-  mutate(
-    onite0=open0/close1
-  ) %>%
-  select(code,name,onite0) %>%
-  unique() %>%
-  mutate(onite0=1)
-
-#做模型输入
-
-xidx <- rev(rownames(close))[1:20]
-xopen <- open[xidx[1:5],,drop=F] %>% t
-colnames(xopen) <- paste0('open',1:5)
-xclose <- close[xidx[1:5],,drop=F] %>% t
-colnames(xclose) <- paste0('close',1:5)
-xlow <- low[xidx[1:5],,drop=F] %>% t
-colnames(xlow) <- paste0('low',1:5)
-xhigh <- high[xidx[1:5],,drop=F] %>% t
-colnames(xhigh) <- paste0('high',1:5)
-xval <- val[xidx[1:5],,drop=F] %>% t
-colnames(xval) <- paste0('val',1:5)
-xjg <- jg[xidx[1:5],,drop=F] %>% t
-colnames(xjg) <- paste0('jg',1:5)
-
-X <- data.table(
-  code=as.numeric(rownames(xopen)),
-  obs=max(xidx),
-  xopen,xclose,xlow,xhigh,xval,xjg,
-  jg10=colMeans(jg[xidx[1:10],,drop=F],na.rm=T)
-) %>%
-  merge(
-    onite0 %>% mutate(code=as.numeric(code))
-  ) %>%
-  mutate(open0=close1*onite0) %>%
-  select(-onite0,-name)
-
-X <- X %>%
-  merge(
-    X %>%
-      group_by(obs) %>%
-      summarise(
-        btoday1=mean(close1/open1,na.rm=T), 
-        bonite0=mean(open0/close1,na.rm=T),
-        broi1=mean(close1/open2,na.rm=T),
-        broi5=mean(close1/open5,na.rm=T)
-      ) %>%
-      mutate(
-        class=(btoday1>1)*1000+(bonite0>1)*100+(broi1>1)*10+(broi5>1)*1
+    merge(
+      onite1 %>% mutate(code=as.numeric(code))
+    ) %>%
+    mutate(open0=close1*onite0) %>%
+    select(-onite0)
+  
+  X <- X %>%
+    merge(
+      X %>%
+        group_by(obs) %>%
+        summarise(
+          btoday1=mean(close1/open1,na.rm=T), 
+          bonite0=mean(open0/close1,na.rm=T),
+          broi1=mean(close1/open2,na.rm=T),
+          broi5=mean(close1/open5,na.rm=T)
+        ) %>%
+        mutate(
+          class=(btoday1>1)*1000+(bonite0>1)*100+(broi1>1)*10+(broi5>1)*1
+        ),
+      by='obs'
+    ) %>%
+    mutate(
+      x1=open1/open0,
+      x2=close1/open0,
+      x3=high1/open0,
+      x4=low1/open0,
+      x5=jg1,
+      x6=jg2,
+      x7=jg3+jg4+jg5,
+      x8=jg10,
+      x9=close1/(close2+close3+close4+close5)*4
+    ) %>%
+    mutate(x10=ifelse(floor(as.numeric(code) / 10000) %in% c(30, 68), 1.198, 1.098)) %>%
+    select(obs,code,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,btoday1,bonite0,broi1,broi5,class)
+  
+  k <- match(unique(X$class),classlist)
+  
+  system.time(
+    rlti <- lapply(1:length(models_xjj[[k]]),function(i){
+      modeli1 <- models_xjj[[k]][[i]]
+      modeli2 <- models_idx[[k]][[i]]
+      out1 <- predict(modeli1,newdata=X)
+      out2 <- predict(modeli2,newdata=X)
+      data.table(i=i,id=1:length(out1),pxjj=out1,pidx=out2)
+    }) %>%
+      rbindlist %>%
+      group_by(id) %>%
+      summarise(mxjj=mean(pxjj),midx=mean(pidx),sxjj=sd(pxjj),sidx=sd(pidx),wxjj=mean(pxjj>1),widx=mean(pidx>1))
+  )
+  
+  out <- data.table(X[,1:2],rlti) %>%
+    merge(
+      data.table(
+        code=as.numeric(colnames(close)),
+        close1=close[nrow(close)-1,],
+        open0=open[nrow(open),],
+        close0=close[nrow(close),]
       ),
-    by='obs'
+      by='code'
+    ) %>%
+    merge(
+      allcodes,by='code'
+    ) %>%
+    filter(mxjj>1,open0<close1,widx>0.6,wxjj>0.6) %>%
+    arrange(desc(midx)) %>%
+    mutate(roi=close0/open0) %>%
+    select(obs,code,name,pred_xjj=mxjj,pred_idx=midx,win_xjj=wxjj,win_idx=widx,price_in_qfq=open0,roi) %>%
+    head(20)
+  
+  out$cumroi <- cummean(out$roi)
+
+  out
+  
+}
+
+list0 <- function(){
+  
+  onite0 <- rbind(
+    ak$stock_sh_a_spot_em(),
+    ak$stock_sz_a_spot_em()
   ) %>%
-  mutate(
-    x1=open1/open0,
-    x2=close1/open0,
-    x3=high1/open0,
-    x4=low1/open0,
-    x5=jg1,
-    x6=jg2,
-    x7=jg3+jg4+jg5,
-    x8=jg10,
-    x9=close1/(close2+close3+close4+close5)*4
+    select(
+      code=`代码`,
+      name=`名称`,
+      open0=`今开`,
+      close1=`昨收`
+    ) %>%
+    mutate(
+      onite0=open0/close1
+    ) %>%
+    select(code,name,onite0,open0_hfq=open0,close1_hfq=close1) %>%
+    unique() %>%
+    mutate(onite0=ifelse(is.na(onite0),1,onite0))
+  
+  #做模型输入
+  
+  xidx <- rev(rownames(close))[1:20]
+  xopen <- open[xidx[1:5],,drop=F] %>% t
+  colnames(xopen) <- paste0('open',1:5)
+  xclose <- close[xidx[1:5],,drop=F] %>% t
+  colnames(xclose) <- paste0('close',1:5)
+  xlow <- low[xidx[1:5],,drop=F] %>% t
+  colnames(xlow) <- paste0('low',1:5)
+  xhigh <- high[xidx[1:5],,drop=F] %>% t
+  colnames(xhigh) <- paste0('high',1:5)
+  xval <- val[xidx[1:5],,drop=F] %>% t
+  colnames(xval) <- paste0('val',1:5)
+  xjg <- jg[xidx[1:5],,drop=F] %>% t
+  colnames(xjg) <- paste0('jg',1:5)
+  
+  X <- data.table(
+    code=as.numeric(rownames(xopen)),
+    obs=max(xidx),
+    xopen,xclose,xlow,xhigh,xval,xjg,
+    jg10=colMeans(jg[xidx[1:10],,drop=F],na.rm=T)
   ) %>%
-  mutate(x10=ifelse(floor(as.numeric(code) / 10000) %in% c(30, 68), 1.198, 1.098)) %>%
-  select(obs,code,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,btoday1,bonite0,broi1,broi5,class)
+    merge(
+      onite0 %>% mutate(code=as.numeric(code))
+    ) %>%
+    mutate(open0=close1*onite0) %>%
+    select(-onite0,-name)
+  
+  X <- X %>%
+    merge(
+      X %>%
+        group_by(obs) %>%
+        summarise(
+          btoday1=mean(close1/open1,na.rm=T), 
+          bonite0=mean(open0/close1,na.rm=T),
+          broi1=mean(close1/open2,na.rm=T),
+          broi5=mean(close1/open5,na.rm=T)
+        ) %>%
+        mutate(
+          class=(btoday1>1)*1000+(bonite0>1)*100+(broi1>1)*10+(broi5>1)*1
+        ),
+      by='obs'
+    ) %>%
+    mutate(
+      x1=open1/open0,
+      x2=close1/open0,
+      x3=high1/open0,
+      x4=low1/open0,
+      x5=jg1,
+      x6=jg2,
+      x7=jg3+jg4+jg5,
+      x8=jg10,
+      x9=close1/(close2+close3+close4+close5)*4
+    ) %>%
+    mutate(x10=ifelse(floor(as.numeric(code) / 10000) %in% c(30, 68), 1.198, 1.098)) %>%
+    select(obs,code,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,btoday1,bonite0,broi1,broi5,class)
+  
+  #输出结果
+  
+  k <- match(unique(X$class),classlist)
+  
+  system.time(
+    rlti <- lapply(1:length(models_xjj[[k]]),function(i){
+      modeli1 <- models_xjj[[k]][[i]]
+      modeli2 <- models_idx[[k]][[i]]
+      out1 <- predict(modeli1,newdata=X)
+      out2 <- predict(modeli2,newdata=X)
+      data.table(i=i,id=1:length(out1),pxjj=out1,pidx=out2)
+    }) %>%
+      rbindlist %>%
+      group_by(id) %>%
+      summarise(mxjj=mean(pxjj),midx=mean(pidx),sxjj=sd(pxjj),sidx=sd(pidx),wxjj=mean(pxjj>1),widx=mean(pidx>1))
+  )
+  
+  list(
+    threshold.5 = data.table(X[,1:2],rlti) %>%
+      merge(
+        data.table(
+          code=as.numeric(colnames(close)),
+          close1=close[nrow(close)-1,]
+        ),
+        by='code') %>%
+      merge(
+        onite0 %>% mutate(code=as.numeric(code)),by='code'
+      ) %>%
+      mutate(open0=close1*onite0) %>%
+      filter(mxjj>1,open0<=close1,widx>0.5,wxjj>0.5) %>%
+      arrange(desc(midx)) %>%
+      select(obs,code,name,pred_xjj=mxjj,pred_idx=midx,win_xjj=wxjj,win_idx=widx,price_in=open0_hfq) %>%
+      head(20),
+    threshold.6 = data.table(X[,1:2],rlti) %>%
+      merge(
+        data.table(
+          code=as.numeric(colnames(close)),
+          close1=close[nrow(close)-1,]
+        ),
+        by='code') %>%
+      merge(
+        onite0 %>% mutate(code=as.numeric(code)),by='code'
+      ) %>%
+      mutate(open0=close1*onite0) %>%
+      filter(mxjj>1,open0<=close1,widx>0.6,wxjj>0.6) %>%
+      arrange(desc(midx)) %>%
+      head(20)
+  )
+  
+}
 
-#输出结果
+list1()
 
-k <- match(unique(X$class),classlist)
+list0()
 
-system.time(
-  rlti <- lapply(1:length(models_xjj[[k]]),function(i){
-    modeli1 <- models_xjj[[k]][[i]]
-    modeli2 <- models_idx[[k]][[i]]
-    out1 <- predict(modeli1,newdata=X)
-    out2 <- predict(modeli2,newdata=X)
-    data.table(i=i,id=1:length(out1),pxjj=out1,pidx=out2)
-  }) %>%
-    rbindlist %>%
-    group_by(id) %>%
-    summarise(mxjj=mean(pxjj),midx=mean(pidx),sxjj=sd(pxjj),sidx=sd(pidx))
-)
 
-data.table(X[,1:2],rlti) %>%
-  merge(
-    data.table(
-      code=as.numeric(colnames(close)),
-      close1=close[nrow(close)-1,]
-    ),
-    by='code') %>%
-  merge(
-    onite0 %>% mutate(code=as.numeric(code)),by='code'
-  ) %>%
-  mutate(open0=close1*onite0) %>%
-  filter(mxjj>1,open0<=close1) %>%
-  arrange(desc(midx)) %>%
-  head(20)
 
 ################################################################################
 #训练模型
@@ -459,7 +492,9 @@ mfiles <- lapply(unique(datasets$class),function(i){
     select(buy,code,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,y,xjj,btoday1,bonite0,broi1,broi5,class)
 })
 
-set.seed(1); seeds <- sample(1:10000,300)
+#设定抽样随机树，训练模型
+
+set.seed(1); seeds <- sample(1:10000,300) #设定数据随机数
 
 system.time(
   models_idx <- lapply(mfiles,function(mfile){
@@ -491,6 +526,14 @@ system.time(
   })
 )
 
+classlist <- unique(datasets$class)
+
+system.time(save(models_idx,models_xjj,classlist,file='result/models_test.rda'))
+
+################################################################
+#回测
+################################################################
+
 system.time(
   tests <- lapply(1:length(models_xjj),function(k){
     print(paste(k,Sys.time()))
@@ -513,13 +556,7 @@ system.time(
   })
 )
 
-classlist <- unique(datasets$class)
-
-save(models_idx,models_xjj,classlist,file='result/models_test.rda')
-
-################################################################
-#回测
-################################################################
+# write.csv(rbindlist(tests),'result/test_20150415.csv',row.names=F)
 
 rbindlist(tests) %>%
   group_by(class) %>%
@@ -539,13 +576,14 @@ rbindlist(tests) %>%
     all.x=T
   ) %>%
   mutate(roi=ifelse(is.na(roi),1,roi)) %>%
-  group_by(floor(buy/10000)) %>% 
+  group_by(floor(buy/100)) %>% 
   summarise(win=mean(roi>benchroi),bench=prod(benchroi),roi=prod(roi),n=n()) %>%
-  mutate(idx=roi/bench) 
+  mutate(idx=roi/bench) %>%
+  as.data.frame()
 
 rbindlist(tests) %>%
   mutate(xjj=(xjj-1)/2+1) %>%
-  filter(mxjj>1) %>%
+  filter(mxjj>1,wxjj>0.6,widx>0.5) %>%
   arrange(buy,desc(midx)) %>%
   group_by(buy,class) %>%
   summarise(
