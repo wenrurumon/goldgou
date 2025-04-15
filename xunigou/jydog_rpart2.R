@@ -554,18 +554,22 @@ system.time(
   })
 )
 
-# write.csv(rbindlist(tests),'result/test_20150415.csv',row.names=F)
+tests <- rbindlist(tests)
 
-rbindlist(tests) %>%
+# write.csv(tests,'result/test_20150415.csv',row.names=F)
+
+tests <- fread('result/test_20150415.csv')
+
+tests %>%
   group_by(class) %>%
   summarise(cor(y,midx),cor(xjj,mxjj))
 
-rbindlist(tests) %>%
+tests %>%
   mutate(xjj=(xjj-1)/2+1) %>%
   group_by(class,buy) %>%
   summarise(benchroi=mean(xjj)) %>%
   merge(
-    rbindlist(tests) %>%
+    tests %>%
       mutate(xjj=(xjj-1)/2+1) %>%
       filter(mxjj>1,x2>=1,wxjj>0.6,widx>0.6) %>%
       arrange(desc(midx)) %>%
@@ -574,12 +578,12 @@ rbindlist(tests) %>%
     all.x=T
   ) %>%
   mutate(roi=ifelse(is.na(roi),1,roi)) %>%
-  group_by(floor(buy/100)) %>% 
+  group_by(floor(buy/10000)) %>% 
   summarise(win=mean(roi>benchroi),bench=prod(benchroi),roi=prod(roi),n=n()) %>%
   mutate(idx=roi/bench) %>%
   as.data.frame()
 
-rbindlist(tests) %>%
+tests %>%
   mutate(xjj=(xjj-1)/2+1) %>%
   filter(mxjj>1,wxjj>0.6,widx>0.5) %>%
   arrange(buy,desc(midx)) %>%
