@@ -5,17 +5,22 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 import os
 import random
+import joblib
 from joblib import Parallel, delayed
 import time
 import akshare as ak
 import datetime
+
+def log_time(message):
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"{message} @ {now_str}")
 
 ################################################################################
 # Process Sina Data
 ################################################################################
 
 start_time = time.time()
-print(f"启动数据处理")
+log_time('跟随miu神，金狗，启动！')
 
 # 读取数据
 max_file = max([f for f in os.listdir('data') if 'sinadata' in f])
@@ -249,7 +254,7 @@ datasets['class'] = (
 #Training Data
 
 mfiles_train = []
-for i in datasets['class'].unique():
+for i in np.sort(datasets['class'].unique()):
     datai = datasets[datasets['class'] == i].copy()
     datai['ztrate2'] = (datai['high1'] / datai['close2'] >= datai['ztrate']).astype(int)
     datai['ztrate3'] = (datai['low1'] / datai['close2'] >= datai['ztrate']).astype(int)
@@ -274,8 +279,7 @@ for i in datasets['class'].unique():
     combined_df = pd.DataFrame(combined, columns=feature_cols + ['buy', 'code', 'y', 'z', 'class'])
     mfiles_train.append(combined_df)
 
-end_time = time.time()
-print(f"完成数据处理，耗时：{end_time - start_time:.2f} 秒")
+log_time('数据处理完成')
 
 ################################################################################################
 # Training Model
@@ -297,26 +301,156 @@ def train_model(seed, mfile, sample_rate):
     sampled = mfile.iloc[idx].copy()
     X = sampled.drop(columns=['buy', 'code', 'z', 'class', 'y'])
     Y = sampled[['y', 'z']]
-    model = DecisionTreeRegressor(ccp_alpha=0.001)
+    model = DecisionTreeRegressor(ccp_alpha=0.0)
     model.fit(X, Y)
     return model
-
 
 # 全量训练开始
 
 models = []
-start_time = time.time()
-print(datetime.datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S'))
+
 for mfile in mfiles_train:
     cls = mfile['class'].iloc[0]
-    print(f"训练 class={cls} @ {datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')}")
+    log_time(f'训练 class={cls}')
     # 并行训练多个随机子模型
-    modeli = Parallel(n_jobs=-1, backend='loky')(
+    modeli = Parallel(n_jobs=8, backend='loky')(
         delayed(train_model)(seed, mfile, sample_rate) for seed in seeds
     )
     models.append({'class': cls, 'models': modeli})
 
-end_time = time.time()
-print(f"训练耗时：{end_time - start_time:.2f} 秒")
+log_time(f'模型训练完成')
 
+filename = str(max(close.index)).replace("-", "")
+save_path = f"models/sina_{filename}.pkl"
+joblib.dump(models, save_path)
+log_time(f'模型导出完成')
 
+################################################################################################
+# Test
+################################################################################################
+
+i = close.shape[0]
+xidx = list(range(i - 1, i - 21, -1))
+xidx_dates = [close.index[idx] for idx in xidx]
+
+xopen = open_.loc[xidx_dates[:5]].T
+xopen.columns = [f'open{i}' for i in range(1, 6)]
+xclose = close.loc[xidx_dates[:5]].T
+xclose.columns = [f'close{i}' for i in range(1, 6)]
+xlow = low.loc[xidx_dates[:5]].T
+xlow.columns = [f'low{i}' for i in range(1, 6)]
+xhigh = high.loc[xidx_dates[:5]].T
+xhigh.columns = [f'high{i}' for i in range(1, 6)]
+xval = val.loc[xidx_dates[:5]].T
+xval.columns = [f'val{i}' for i in range(1, 6)]
+xjg = jg.loc[xidx_dates[:5]].T
+xjg.columns = [f'jg{i}' for i in range(1, 6)]
+xjg2 = jg2.loc[xidx_dates[:5]].T
+xjg2.columns = [f'ojg{i}' for i in range(1, 6)]
+
+stock_list = ak.stock_zh_a_spot()
+stock_list = stock_list[['代码', '名称', '最新价', '昨收', '今开', '最低', '最高', '成交额', '成交额', '时间戳']]
+stock_list.rename(columns={
+    '代码': 'code',
+    '名称': 'name',
+    '最新价': 'new',
+    '昨收': 'close1',
+    '今开': 'open0',
+    '最低': 'low0',
+    '最高': 'high0',
+    '成交额': 'value',
+    '时间戳': 'time'
+}, inplace=True)
+
+stock_list = stock_list[~stock_list['code'].str.startswith('bj')]
+stock_list['code'] = stock_list['code'].str[2:8].astype(int)
+stock_list['roi0'] = stock_list['new']/stock_list['open0']
+stock_list['onite0'] = stock_list['open0']/stock_list['close1']
+stock_list = stock_list[['code','name','onite0','roi0']]
+stock_list.set_index('code', inplace=True)
+stock_list = pd.merge(xclose[['close1']], stock_list, left_index=True, right_index=True, how='outer')
+stock_list['open0'] = stock_list['close1'] * stock_list['onite0']
+
+jg10 = jg.loc[xidx_dates[:10]].mean(axis=0, skipna=True)
+open0 = stock_list['open0']
+
+data = pd.DataFrame({
+    'code': xopen.index.astype(int),
+    'buy': int(buyi),
+    **xopen.to_dict(orient='list'),
+    **xclose.to_dict(orient='list'),
+    **xlow.to_dict(orient='list'),
+    **xhigh.to_dict(orient='list'),
+    **xval.to_dict(orient='list'),
+    **xjg.to_dict(orient='list'),
+    **xjg2.to_dict(orient='list'),
+    'jg10': jg10,
+    'open0': open0
+})
+data['ztrate'] = np.where(np.floor(data['code'] / 10000).isin([30, 68]), 1.198, 1.098)
+
+data['btoday1'] = data['close1'] / data['open1']
+data['bonite0'] = data['open0'] / data['close1']
+data['broi1'] = data['close1'] / data['open2']
+data['broi5'] = data['close1'] / data['open5']
+
+buy_stats = data.groupby('buy').agg({
+    'btoday1': 'mean',
+    'bonite0': 'mean',
+    'broi1': 'mean',
+    'broi5': 'mean'
+}).reset_index()
+
+buy_class = (
+    (buy_stats['btoday1'] > 1).astype(int) * 1000 +
+    (buy_stats['bonite0'] > 1).astype(int) * 100 +
+    (buy_stats['broi1'] > 1).astype(int) * 10 +
+    (buy_stats['broi5'] > 1).astype(int)
+).iloc[0]
+
+X = data.copy()
+X['ztrate2'] = (X['high1'] / X['close2'] >= X['ztrate']).astype(int)
+X['ztrate3'] = (X['low1'] / X['close2'] >= X['ztrate']).astype(int)
+# 特征变换
+X['open1'] = X['open1'] / X['open0']
+X['close1'] = X['close1'] / X['open0']
+X['high1'] = X['high1'] / X['open0']
+X['low1'] = X['low1'] / X['open0']
+X['jg35'] = X['jg3'] + X['jg4'] + X['jg5']
+X['closegr'] = X['close1'] / (X['close2'] + X['close3'] + X['close4'] + X['close5']) * 4
+X['onite0'] = 1 / X['close1']
+# 选择输出列
+feature_cols = ['open1', 'onite0', 'high1', 'low1', 'jg1', 'jg2', 'jg35', 'jg10', 'ojg1',
+                'closegr', 'ztrate', 'ztrate2', 'ztrate3',
+                'btoday1', 'bonite0', 'broi1', 'broi5']
+
+X = X.replace([np.inf, -np.inf], np.nan).dropna().copy()
+map = X[['code','buy']]
+X = X[feature_cols]
+
+modelsi = next((m['models'] for m in models if m['class'] == buy_class), None)
+pred = []
+for modeli in modelsi:
+    pred.append(modeli.predict(X))
+
+pred = np.array(pred)
+
+rlt = pd.concat([
+    map.reset_index(drop=True),
+    pd.DataFrame(np.mean(pred, axis=0), columns=['py', 'pz']).reset_index(drop=True),
+    pd.DataFrame(np.mean(pred>0, axis=0), columns=['wy', 'wz']).reset_index(drop=True)
+],axis=1)
+
+rlt = pd.merge(rlt, stock_list.reset_index().drop(columns=['close1','open0']), on='code', how='left')
+rlt = pd.merge(rlt,X['ojg1'].reset_index().rename(columns={'ojg1':'jg0'}),on='code',how='left')
+
+out = rlt[
+    (rlt['py'] > 0) &
+    (rlt['pz'] > 0) &
+    (rlt['wy'] > 0.6) &
+    (rlt['wz'] > 0.5)
+].sort_values(by=['jg0', 'py'], ascending=[False, False]).head(20)
+
+out['cumroi'] = np.cumprod(out['roi0'])
+print(out)
+log_time(f'金狗完成')
